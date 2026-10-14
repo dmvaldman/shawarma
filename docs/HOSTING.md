@@ -73,8 +73,13 @@ through the gateway. Service passwords are never placed in URLs.
 
 Google sign-in uses authorization code + PKCE, state, browser-binding and nonce,
 with verified RS256 issuer/audience/expiry and stable Google subject IDs. New
-Google identities cannot create accounts: first open an invite link and choose
-Connect Google in the portal. Invites remain usable. See GOOGLE_SIGN_IN.md.
+Google identities create locked accounts. After sign-in, redeem an invite to unlock
+provider settings and provisioning. Redemption atomically attaches the Google identity
+and its portal sessions to the existing invited workspace, preserving its data and role.
+Existing accounts default to activated during migration. Pending identities do not
+consume invitation places and cannot access resource endpoints. Invite links carry
+the code through Google sign-in in tab-scoped session storage, cleared on redemption.
+The legacy invite login API remains available for operator recovery. See GOOGLE_SIGN_IN.md.
 
 Keep ports private; do not add public tenant service ports. The only public port is
 the hosting broker/control-plane listener, which checks either a server-side service

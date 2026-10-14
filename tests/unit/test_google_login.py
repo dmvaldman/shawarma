@@ -1,3 +1,4 @@
+import asyncio
 import time
 from urllib.parse import parse_qs, urlsplit
 
@@ -47,9 +48,6 @@ async def test_google_requires_invite_then_links_stable_subject_and_retains_invi
         return {"sub": "stable-google-subject", "email_verified": True}
 
     monkeypatch.setattr(login, "claims", claims)
-    public = await callback_input(login, "")
-    with pytest.raises(web.HTTPForbidden):
-        await login.complete(public)
     linked = await callback_input(login, "owner-session")
     with pytest.raises(web.HTTPUnauthorized):
         await login.complete({**linked, "browser_token": "wrong-browser"})
@@ -127,3 +125,53 @@ async def test_google_verifies_signature_audience_nonce_and_verified_identity(
         assert (
             await login.claims("code", {"nonce": "expected-nonce", "verifier": "private-verifier"})
         )["sub"] == "stable-sub"
+
+
+async def test_public_google_signin_then_invite_preserves_workspace(google, monkeypatch):
+    login, owner = google
+
+    async def claims(code, flow):
+        return {"sub": "new-google", "name": "Alice"}
+
+    monkeypatch.setattr(login, "claims", claims)
+    token = await login.complete(await callback_input(login, ""))
+    pending = (await login.store.sql("SELECT * FROM users WHERE google_subject='new-google'"))[0]
+    assert not pending["activated"] and pending["instance"] is None
+    original = await login.store.user(owner)
+    with pytest.raises(ValueError):
+        await login.store.redeem(pending["id"], "invalid")
+    await login.store.redeem(pending["id"], "invited-owner")
+    activated = await login.store.user(owner)
+    assert activated["google_subject"] == "new-google"
+    assert activated["vault"] == original["vault"] and activated["role"] == "admin"
+    session = (
+        await login.store.sql("SELECT user_id FROM sessions WHERE token_hash=?", (digest(token),))
+    )[0]
+    assert session["user_id"] == owner
+    assert not await login.store.sql("SELECT id FROM users WHERE id=?", (pending["id"],))
+    returning = await login.complete(await callback_input(login, ""))
+    assert (
+        await login.store.sql(
+            "SELECT user_id FROM sessions WHERE token_hash=?", (digest(returning),)
+        )
+    )[0]["user_id"] == owner
+    await login.store.invite("Other", subject="other-google", activated=False)
+    other = (await login.store.sql("SELECT id FROM users WHERE google_subject='other-google'"))[0]
+    with pytest.raises(ValueError, match="already claimed"):
+        await login.store.redeem(other["id"], "invited-owner")
+    with pytest.raises(ValueError, match="already has access"):
+        await login.store.redeem(owner, "invited-owner")
+
+
+async def test_only_one_google_identity_can_claim_an_invite(google):
+    login, owner = google
+    for subject in ("alice", "bob"):
+        await login.store.invite(subject, subject=subject, activated=False)
+    pending = await login.store.sql("SELECT id FROM users WHERE activated=0")
+    results = await asyncio.gather(
+        *(login.store.redeem(row["id"], "invited-owner") for row in pending),
+        return_exceptions=True,
+    )
+    assert sum(result is None for result in results) == 1
+    assert sum(isinstance(result, ValueError) for result in results) == 1
+    assert (await login.store.user(owner))["google_subject"] in {"alice", "bob"}

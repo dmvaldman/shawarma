@@ -429,3 +429,25 @@ async def test_service_tickets_are_single_use_bound_and_revoked_on_logout(hosted
     assert (
         await client.post("/gateway/check", headers=gateway_headers, json=check)
     ).status_code == 401
+
+
+async def test_pending_identity_cannot_access_resources_until_invited(hosted):
+    hosting, client = hosted
+    await hosting.store.invite("Pending", code="pending-login", subject="pending", activated=False)
+    token = await login(client, "pending-login")
+    headers = {"X-Swarm-Session": token}
+    assert not (await client.get("/api/me", headers=headers)).json()["activated"]
+    for route in ("providers", "start", "pause", "invite", "open", "credentials"):
+        assert (await client.post("/api/" + route, headers=headers, json={})).status_code == 403
+    assert (await client.get("/api/models", headers=headers)).status_code == 403
+    hosting.cloud.request.assert_not_called()
+    assert (
+        await client.post("/api/redeem", headers=headers, json={"code": "wrong"})
+    ).status_code == 403
+    assert (
+        await client.post("/api/redeem", headers=headers, json={"code": "owner-code"})
+    ).status_code == 200
+    me = (await client.get("/api/me", headers=headers)).json()
+    assert me["activated"] and me["role"] == "admin"
+    await client.post("/api/logout", headers=headers, json={})
+    assert (await client.get("/api/me", headers=headers)).status_code == 401

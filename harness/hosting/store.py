@@ -49,6 +49,8 @@ class HostingStore:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
             if "google_subject" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN google_subject TEXT")
+            if "activated" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN activated INTEGER NOT NULL DEFAULT 1")
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS google_subject ON users(google_subject)"
             )
@@ -70,12 +72,21 @@ class HostingStore:
 
         return await asyncio.to_thread(execute)
 
-    async def invite(self, name: str, role: str = "user", code: str | None = None) -> str:
+    async def invite(
+        self,
+        name: str,
+        role: str = "user",
+        code: str | None = None,
+        *,
+        subject: str | None = None,
+        activated: bool = True,
+    ) -> str:
         code = code or secrets.token_urlsafe(32)
         agent_token = secrets.token_urlsafe(32)
         await self.sql(
-            "INSERT INTO users(id,name,role,login_hash,vault,agent_token_hash,created_at) "
-            "VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO users(id,name,role,login_hash,vault,agent_token_hash,created_at,"
+            "google_subject,activated) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 secrets.token_hex(12),
                 name[:60],
@@ -90,6 +101,8 @@ class HostingStore:
                 ),
                 digest(agent_token),
                 int(time.time()),
+                subject,
+                int(activated),
             ),
         )
         return code
@@ -102,3 +115,31 @@ class HostingStore:
 
     async def save_vault(self, user_id: str, vault: dict[str, Any]) -> None:
         await self.sql("UPDATE users SET vault=? WHERE id=?", (self.seal(vault), user_id))
+
+    async def redeem(self, user_id: str, code: str) -> None:
+        """Bind a pending Google identity to its invited workspace atomically."""
+
+        def execute() -> None:
+            with sqlite3.connect(self.path, timeout=20) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute("BEGIN IMMEDIATE")
+                source = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+                target = conn.execute(
+                    "SELECT * FROM users WHERE login_hash=? AND activated=1", (digest(code),)
+                ).fetchone()
+                if not source or source["activated"] or not source["google_subject"]:
+                    raise ValueError("This account already has access.")
+                if not target or target["google_subject"]:
+                    raise ValueError("Invalid or already claimed invite code.")
+                # Move authenticated sessions; preserve the invited workspace's ID and vault.
+                conn.execute("UPDATE users SET google_subject=NULL WHERE id=?", (user_id,))
+                conn.execute(
+                    "UPDATE users SET google_subject=? WHERE id=?",
+                    (source["google_subject"], target["id"]),
+                )
+                conn.execute(
+                    "UPDATE sessions SET user_id=? WHERE user_id=?", (target["id"], user_id)
+                )
+                conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+        await asyncio.to_thread(execute)

@@ -82,7 +82,7 @@ class Hosting:
             (digest(token), int(time.time())),
         )
         if not rows:
-            raise web.HTTPUnauthorized(text="Sign in with your private invite link.")
+            raise web.HTTPUnauthorized(text="Sign in to continue.")
         return rows[0]
 
     async def api(self, request: web.Request) -> web.Response:
@@ -132,6 +132,7 @@ class Hosting:
                     "name": user["name"],
                     "role": user["role"],
                     "google_connected": bool(user["google_subject"]),
+                    "activated": bool(user["activated"]),
                     "status": user["status"],
                     "stage": user["stage"],
                     "error": user["error"],
@@ -143,6 +144,20 @@ class Hosting:
                     "services": list(PORTS) if user["status"] == "running" else [],
                 }
             )
+        if request.method == "POST" and route == "redeem":
+            token = request.headers["X-Swarm-Session"]
+            attempts = [t for t in self.login_attempts.get(token, []) if t > time.time() - 60]
+            if len(attempts) >= 10:
+                raise web.HTTPTooManyRequests(text="Try again in a minute.")
+            self.login_attempts[token] = attempts + [time.time()]
+            body = await request.json()
+            try:
+                await self.store.redeem(user["id"], str(body.get("code", "")).strip())
+            except ValueError as error:
+                raise web.HTTPForbidden(text=str(error)) from error
+            return web.json_response({"ok": True})
+        if not user["activated"]:
+            raise web.HTTPForbidden(text="Enter an invite code to unlock your swarm.")
         if request.method == "GET" and route == "models":
             catalog = await self.models(user, vault)
             return web.json_response(
@@ -161,7 +176,7 @@ class Hosting:
             name = str(body.get("name", "")).strip()
             if not 1 <= len(name) <= 60:
                 raise web.HTTPBadRequest(text="Enter a name (1–60 characters).")
-            count = (await self.store.sql("SELECT count(*) n FROM users"))[0]["n"]
+            count = (await self.store.sql("SELECT count(*) n FROM users WHERE activated=1"))[0]["n"]
             if count >= 10:
                 raise web.HTTPConflict(text="The friends beta currently has ten places.")
             code = await self.store.invite(name)

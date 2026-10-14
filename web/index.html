@@ -7,7 +7,8 @@
 <figure class="product-preview" tabindex="0"><img src="/images/git.png" width="2940" height="1648" alt="Pull requests and repository activity in Gitea" decoding="async"><figcaption>GIT</figcaption></figure>
 <figure class="product-preview" tabindex="0"><img src="/images/dashboard.png" width="2940" height="1648" alt="Agent activity and usage dashboard" decoding="async"><figcaption>DASHBOARD</figcaption></figure>
 </div>
-<form id="login-form" class="panel"><label for="invite-code">Private invite code</label><input id="invite-code" type="password" autocomplete="off" required><button type="submit">Continue</button><button id="google-login" type="button" class="google-button" hidden>Sign in with Google</button></form></section>
+<button id="google-login" type="button" class="google-button" hidden>Sign in with Google</button></section>
+<section id="activation" hidden><h1>Unlock your swarm</h1><form id="login-form" class="panel"><label for="invite-code">Invite code</label><input id="invite-code" type="password" autocomplete="off" required><button type="submit">Unlock</button></form></section>
 <section id="account" hidden><div class="section-heading"><div><h1 id="name">Your swarm</h1></div><span class="pill" id="status" role="status" aria-live="polite" aria-atomic="true">Loading</span></div>
 <div id="notice" class="notice" role="status" hidden></div>
 <div class="panel"><div class="split"><div><h2 id="machine-title">Ready when you are</h2><p id="machine-copy" class="muted">Add a provider key, then start a session.</p></div><div class="actions"><label class="sr-only" for="duration">Session duration</label><select id="duration"><option value="2">2 hours</option><option value="8" selected>8 hours</option><option value="24">24 hours</option></select><button id="start">Start swarm</button><button id="pause" class="quiet" hidden>Pause &amp; sleep</button></div></div></div>

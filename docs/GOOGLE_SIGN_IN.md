@@ -9,13 +9,14 @@
 5. Store HOSTING_GOOGLE_CLIENT_ID and HOSTING_GOOGLE_CLIENT_SECRET in the private
    operator environment, then deploy them to the hosting control-plane environment.
    Never use public Vercel environment variables or commit these values.
-6. Open your invite link, select Connect Google in the portal, and complete Google
-   sign-in. Later visits can use Sign in with Google. The invite link also works.
+6. Select Sign in with Google. New accounts see an invite-code form after sign-in.
+   Enter a private invite code to unlock the swarm. Private invite links carry the
+   code through sign-in and redeem it automatically. Returning users sign in directly.
 
-Google sign-in does not grant beta access on its own. Accounts are linked by the
-verified stable Google subject, never by matching email addresses. Uninvited users
-are asked to use their invite link first. Native service SSO uses the same portal
-session regardless of whether it came from Google or an invite.
+Google sign-in alone does not grant access to provisioning or provider settings.
+Accounts are linked by verified stable Google subject, never by matching emails.
+Existing invited workspaces and their data are preserved when claiming an invite.
+Native service SSO uses the same portal session.
 
 References: [Google setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
 and [OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect).

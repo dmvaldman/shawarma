@@ -1,8 +1,9 @@
-"""Google authorization-code sign-in, bound to an existing invited account."""
+"""Google authorization-code sign-in, with invite activation after authentication."""
 
 import base64
 import hashlib
 import secrets
+import sqlite3
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -157,8 +158,17 @@ class GoogleLogin:
         else:
             users = await self.store.sql("SELECT * FROM users WHERE google_subject=?", (subject,))
             if not users:
-                raise web.HTTPForbidden(
-                    text="Open your invite link first, then connect Google in your account."
+                # No infrastructure or provider access until this identity redeems an invite.
+                try:
+                    await self.store.invite(
+                        str(claims.get("name", "Your account")),
+                        subject=subject,
+                        activated=False,
+                    )
+                except sqlite3.IntegrityError:
+                    pass  # A concurrent callback may have created the same identity.
+                users = await self.store.sql(
+                    "SELECT * FROM users WHERE google_subject=?", (subject,)
                 )
         session = secrets.token_urlsafe(32)
         await self.store.sql(
