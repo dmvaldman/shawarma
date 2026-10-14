@@ -110,3 +110,8 @@ The platform VM and tenant VMs both retain disk while stopped. At the documented
 rates, a 2 vCPU/4 GB/12 GB platform VM is about $12.08/month continuously running;
 a 4 vCPU/8 GB/20 GB tenant costs about $0.72 per awake day plus $1.80/month retained
 disk, excluding inference/backups. These are estimates, not capacity guarantees.
+
+Hosted Mattermost bootstrapping skips the native welcome tour and hides its onboarding
+checklist for the owner. It installs the same Discord Dark palette as the local swarm
+once per workspace, preserving later manual theme changes across resumes. Existing
+sleeping workspaces receive these defaults on their next resume.

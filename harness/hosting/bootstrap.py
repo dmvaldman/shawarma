@@ -10,6 +10,7 @@ import httpx
 from dotenv import dotenv_values
 
 from harness.coding.setup import update_env
+from harness.hosting.mattermost_defaults import owner_preferences
 
 
 async def bootstrap() -> None:
@@ -59,6 +60,15 @@ async def bootstrap() -> None:
             )
             issued.raise_for_status()
             token = issued.json()["token"]
+        headers = {"Authorization": "Bearer " + token}
+        preferences = await client.get("users/" + owner["id"] + "/preferences", headers=headers)
+        preferences.raise_for_status()
+        saved = await client.put(
+            "users/" + owner["id"] + "/preferences",
+            headers=headers,
+            json=owner_preferences(owner["id"], preferences.json()),
+        )
+        saved.raise_for_status()
         update_env(
             {"HARNESS_MATTERMOST_ADMIN_TOKEN": token, "HARNESS_MATTERMOST_OWNER_ID": owner["id"]}
         )
