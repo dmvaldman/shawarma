@@ -157,7 +157,11 @@ class Avatars:
             or state["control_paused"]
         ):
             return
-        if not self.settings.openai_api_key.get_secret_value():
+        key = (
+            self.settings.avatar_api_key.get_secret_value()
+            or self.settings.openai_api_key.get_secret_value()
+        )
+        if not key:
             raise RuntimeError("OpenAI key required for avatar generation")
         claimed = await self.store.pool.fetchval(
             "UPDATE agent_avatars SET state='generating',updated_at=now() "
@@ -169,10 +173,9 @@ class Avatars:
         identity = await self.store.get(agent)
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
-                str(self.settings.openai_base_url).rstrip("/") + "/images/generations",
-                headers={
-                    "Authorization": "Bearer " + self.settings.openai_api_key.get_secret_value()
-                },
+                (self.settings.avatar_base_url or str(self.settings.openai_base_url)).rstrip("/")
+                + "/images/generations",
+                headers={"Authorization": "Bearer " + key},
                 json={
                     "model": model,
                     "prompt": portrait_prompt(

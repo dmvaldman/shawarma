@@ -60,6 +60,8 @@ def worker_config(settings: Settings) -> dict[str, Any]:
         ("anthropic", settings.anthropic_base_url, "ANTHROPIC_API_KEY"),
         ("deepseek", settings.deepseek_base_url, "DEEPSEEK_API_KEY"),
     ]:
+        if not getattr(settings, key.lower()).get_secret_value():
+            continue
         providers[name] = {
             "options": {"baseURL": str(url).rstrip("/"), "apiKey": "{env:" + key + "}"},
             "models": models.get(name, {}),

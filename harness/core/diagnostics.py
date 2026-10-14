@@ -51,6 +51,7 @@ class Diagnostics(logging.Handler):
         secrets = [
             self.settings.mattermost_admin_token.get_secret_value(),
             self.settings.openai_api_key.get_secret_value(),
+            self.settings.avatar_api_key.get_secret_value(),
             self.settings.anthropic_api_key.get_secret_value(),
             self.settings.deepseek_api_key.get_secret_value(),
             self.settings.agent37_api_key.get_secret_value(),

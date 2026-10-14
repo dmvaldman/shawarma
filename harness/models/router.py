@@ -105,7 +105,7 @@ class ProviderRouter:
         return metadata
 
     async def verify_model(self) -> None:
-        await self.prepare(self.settings.openai_model_id)
+        await self.prepare(self.settings.seed_model_id)
 
     async def close(self) -> None:
         await self.http.aclose()

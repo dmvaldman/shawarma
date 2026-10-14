@@ -339,3 +339,33 @@ async def test_deepseek_does_not_retry_other_bad_requests_or_irreducible_overflo
             assert len(calls) == 1
         finally:
             await router.close()
+
+
+@pytest.mark.parametrize(
+    "provider,model", [("anthropic", "claude-haiku-5-5"), ("deepseek", "deepseek-flash")]
+)
+async def test_seed_verification_uses_only_configured_provider(provider, model):
+    s = Settings(
+        _env_file=None,
+        mattermost_url="https://mm.test",
+        database_url="unused",
+        OPENAI_API_KEY="",
+        ANTHROPIC_API_KEY="anthropic-key" if provider == "anthropic" else "",
+        DEEPSEEK_API_KEY="deepseek-key" if provider == "deepseek" else "",
+        seed_model=provider + ":" + model,
+    )
+    calls = []
+
+    def api(request):
+        calls.append(request)
+        assert "openai" not in request.url.host
+        return httpx.Response(200, json={"data": [{"id": model}]})
+
+    transport = httpx.MockTransport(api)
+    router = ProviderRouter(s, ModelCatalog(s, transport), transport)
+    try:
+        await router.verify_model()
+        assert router.profiles[s.seed_model_id]["provider"] == provider
+        assert len(calls) == 1
+    finally:
+        await router.close()

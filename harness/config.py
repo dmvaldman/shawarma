@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     database_url: str
     avatars_enabled: bool = True
     avatar_model: str = "gpt-image-2.5-flare"
+    avatar_base_url: str = ""
+    avatar_api_key: SecretStr = SecretStr("")
+    seed_model: str = ""
     max_active_agents: int = Field(default=24, gt=0)
     max_concurrent_llm_calls: int = Field(default=10, gt=0)
     max_tokens_per_turn: int = Field(default=4096, gt=0)
@@ -82,6 +85,10 @@ class Settings(BaseSettings):
     agent37_api_key: SecretStr = Field(default=SecretStr(""), validation_alias="AGENT37_API_KEY")
     agent37_base_url: HttpUrl = HttpUrl("https://api.agent37.com/v1")
     agent37_instance_id: str = ""
+
+    @property
+    def seed_model_id(self) -> str:
+        return self.seed_model or self.openai_model_id
 
     @model_validator(mode="after")
     def coherent_limits(self) -> "Settings":

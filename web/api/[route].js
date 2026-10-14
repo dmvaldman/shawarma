@@ -1,9 +1,9 @@
-const routes=new Set(['login','logout','me','providers','start','pause','invite','open','credentials']);
+const routes=new Set(['login','logout','me','providers','start','pause','invite','open','credentials','models']);
 export default async function handler(req,res){
   res.setHeader('Cache-Control','no-store');
   const route=req.query.route;
   if(!routes.has(route))return res.status(404).json({error:'Not found.'});
-  if(req.method!==(route==='me'?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
+  if(req.method!==(['me','models'].includes(route)?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
   if(req.method==='POST'&&req.headers.origin!=='https://'+req.headers.host)return res.status(403).json({error:'Origin rejected.'});
   if(!process.env.CONTROL_PLANE_URL||!process.env.CONTROL_PLANE_KEY)return res.status(503).json({error:'The beta is being prepared. Please check back shortly.'});
   let session='';

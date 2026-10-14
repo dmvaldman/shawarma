@@ -76,7 +76,7 @@ async def test_invites_sessions_and_service_access_are_scoped(hosted):
     assert (await client.get("/api/me", headers=alice_headers)).status_code == 401
 
 
-async def test_provider_keys_encrypted_and_only_proxy_credential_enters_vm(hosted):
+async def test_provider_keys_encrypted_and_only_proxy_credential_enters_vm(hosted, monkeypatch):
     hosting, client = hosted
     token = await login(client, "owner-code")
     user = (await client.get("/api/me", headers={"X-Swarm-Session": token})).json()
@@ -88,6 +88,23 @@ async def test_provider_keys_encrypted_and_only_proxy_credential_enters_vm(hoste
     assert "private-real-provider-key" not in row["vault"]
     assert (await hosting.store.sql("SELECT token_hash FROM sessions"))[0]["token_hash"] == digest(
         token
+    )
+    monkeypatch.setattr(
+        hosting,
+        "models",
+        AsyncMock(
+            return_value={
+                "models": [
+                    {
+                        "id": "openai:gpt-6-luna",
+                        "agent_candidate": True,
+                        "input": ".25",
+                        "output": ".75",
+                        "class": "lite",
+                    }
+                ]
+            }
+        ),
     )
     hosting.cloud.install = AsyncMock()
     row["instance"] = "test-node"
@@ -227,3 +244,135 @@ async def test_expiry_stops_own_machine_while_another_user_is_provisioning(hoste
         for operation in hosting.operations.values():
             operation.cancel()
         await asyncio.gather(*hosting.operations.values(), return_exceptions=True)
+
+
+@pytest.mark.parametrize(
+    "provider,model", [("anthropic", "claude-haiku-5-5"), ("deepseek", "deepseek-flash")]
+)
+async def test_non_openai_account_can_start_and_configure_seed(
+    hosted, monkeypatch, provider, model
+):
+    hosting, client = hosted
+    token = await login(client, "owner-code")
+    headers = {"X-Swarm-Session": token}
+    me = (await client.get("/api/me", headers=headers)).json()
+    row = await hosting.store.user(me["id"])
+    vault = hosting.store.unseal(row)
+    vault["providers"][provider] = "the-users-provider-key"
+    await hosting.store.save_vault(row["id"], vault)
+    monkeypatch.setattr(
+        hosting,
+        "models",
+        AsyncMock(
+            return_value={
+                "models": [
+                    {
+                        "id": provider + ":" + model,
+                        "agent_candidate": True,
+                        "input": "1",
+                        "output": "2",
+                        "class": "lite",
+                    }
+                ]
+            }
+        ),
+    )
+    hosting.cloud.install = AsyncMock()
+    assert (await client.post("/api/start", json={"hours": 2}, headers=headers)).status_code == 200
+    row = await hosting.store.user(row["id"])
+    row["instance"] = "test-node"
+    await hosting.install(row)
+    env = hosting.cloud.install.call_args.args[1]
+    assert env["HARNESS_SEED_MODEL"] == provider + ":" + model
+    assert env["OPENAI_API_KEY"] == ""
+    assert env[provider.upper() + "_API_KEY"] == vault["agent_token"]
+    assert env["HARNESS_AVATAR_API_KEY"] == vault["agent_token"]
+    assert env["HARNESS_AVATAR_BASE_URL"].endswith("/proxy/avatar/v1")
+    assert "the-users-provider-key" not in json.dumps(env)
+
+
+async def test_masked_keys_and_models_are_owner_scoped_cached_and_deleted(hosted, monkeypatch):
+    hosting, client = hosted
+    original = httpx.AsyncClient
+    calls = []
+
+    def provider_api(request):
+        calls.append(request)
+        return httpx.Response(200, json={"data": [{"id": "deepseek-flash"}]})
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original(**{**kwargs, "transport": httpx.MockTransport(provider_api)}),
+    )
+    token = await login(client, "owner-code")
+    headers = {"X-Swarm-Session": token}
+    key = "private-provider-key-that-stays-secret"
+    assert (
+        await client.post(
+            "/api/providers", headers=headers, json={"provider": "deepseek", "key": key}
+        )
+    ).status_code == 200
+    me = (await client.get("/api/me", headers=headers)).json()
+    assert me["provider_keys"]["deepseek"] == "private-" + "*" * 12
+    assert key not in json.dumps(me)
+    for _ in range(2):
+        models = (await client.get("/api/models", headers=headers)).json()
+        assert models["models"][0]["id"] == "deepseek:deepseek-flash"
+        assert key not in json.dumps(models)
+    assert len(calls) == 2  # key validation, then one cached catalog retrieval
+    assert (
+        await client.post(
+            "/api/providers", headers=headers, json={"provider": "deepseek", "key": ""}
+        )
+    ).status_code == 200
+    assert (await client.get("/api/models", headers=headers)).json()["models"] == []
+    assert (await client.post("/api/start", headers=headers, json={"hours": 2})).status_code == 400
+    assert hosting.masked_key("short-key") == "*" * 12
+
+
+async def test_host_avatar_key_only_authorizes_fixed_image_requests(hosted, monkeypatch):
+    hosting, client = hosted
+    hosting.avatar_key = "private-host-image-key"
+    original = httpx.AsyncClient
+    observed = []
+
+    def upstream(request):
+        observed.append(request)
+        assert request.headers["Authorization"] == "Bearer private-host-image-key"
+        return httpx.Response(200, json={"data": [{"b64_json": "test"}]})
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original(**{**kwargs, "transport": httpx.MockTransport(upstream)}),
+    )
+    await login(client, "owner-code")
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    vault = hosting.store.unseal(row)
+    assert not vault["providers"]
+    headers = {"Authorization": "Bearer " + vault["agent_token"]}
+    assert (
+        await client.post("/proxy/avatar/v1/responses", headers=headers, json={})
+    ).status_code == 403
+    body = {
+        "model": "gpt-image-2.5-flare",
+        "prompt": "a friendly research teammate",
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "low",
+        "output_format": "jpeg",
+        "output_compression": 80,
+    }
+    assert (
+        await client.post(
+            "/proxy/avatar/v1/images/generations", headers=headers, json={**body, "n": 2}
+        )
+    ).status_code == 400
+    response = await client.post("/proxy/avatar/v1/images/generations", headers=headers, json=body)
+    assert response.status_code == 200
+    assert len(observed) == 1 and observed[0].url.path == "/v1/images/generations"
+    assert "private-host-image-key" not in response.text
+    assert (
+        await client.post("/proxy/openai/v1/responses", headers=headers, json={})
+    ).status_code == 401

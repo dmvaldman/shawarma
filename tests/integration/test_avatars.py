@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from pydantic import SecretStr
 
 from harness.api.analytics import ledger_snapshot
 from harness.core.avatars import Avatars, sync_gitea_avatar
@@ -15,13 +16,26 @@ pytestmark = pytest.mark.skipif(os.environ.get("HARNESS_LIVE_TESTS") != "1", rea
 
 async def test_generate_once_and_reuse_image_for_both_services(runtime_store, monkeypatch):
     store, settings, agent, workspace = runtime_store
-    manager = Avatars(store, settings.model_copy(update={"avatars_enabled": True}), workspace)
+    manager = Avatars(
+        store,
+        settings.model_copy(
+            update={
+                "avatars_enabled": True,
+                "openai_api_key": SecretStr(""),
+                "avatar_api_key": SecretStr("hosted-avatar-token"),
+                "avatar_base_url": "https://avatars.test/v1",
+            }
+        ),
+        workspace,
+    )
     image = b"\xff\xd8\xffJPEG-test"
     requests = []
 
     def api(request):
         requests.append(request)
         if request.url.path.endswith("/images/generations"):
+            assert request.url.host == "avatars.test"
+            assert request.headers["Authorization"] == "Bearer hosted-avatar-token"
             body = json.loads(request.content)
             assert body["model"] == "gpt-image-2.5-flare"
             assert "specialty" in body["prompt"]

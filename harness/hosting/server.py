@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -14,8 +15,10 @@ from urllib.parse import urlsplit
 import httpx
 from aiohttp import web
 
+from harness.config import Settings
 from harness.hosting.cloud import Cloud, HostingError
 from harness.hosting.store import HostingStore, digest
+from harness.models.catalog import ModelCatalog
 
 PROVIDERS = {
     "openai": "https://api.openai.com/v1",
@@ -35,14 +38,37 @@ class Hosting:
         public_url: str,
         source_ref: str,
         owner_code: str,
+        avatar_key: str = "",
     ):
         self.store, self.cloud = store, cloud
         self.service_key, self.public_url, self.source_ref = service_key, public_url, source_ref
         self.owner_code = owner_code
+        self.avatar_key = avatar_key
+        self.catalogs: dict[str, tuple[str, ModelCatalog]] = {}
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
         self.operations: dict[str, asyncio.Task[None]] = {}
         self.login_attempts: dict[str, list[float]] = {}
+
+    async def models(self, user: dict[str, Any], vault: dict[str, Any]) -> dict[str, Any]:
+        keys = vault["providers"]
+        fingerprint = hashlib.sha256(json.dumps(keys, sort_keys=True).encode()).hexdigest()
+        cached = self.catalogs.get(user["id"])
+        if cached is None or cached[0] != fingerprint:
+            settings = Settings(
+                _env_file=None,
+                mattermost_url="http://localhost:8065",
+                database_url="unused",
+                OPENAI_API_KEY=keys.get("openai", ""),
+                ANTHROPIC_API_KEY=keys.get("anthropic", ""),
+                DEEPSEEK_API_KEY=keys.get("deepseek", ""),
+            )
+            self.catalogs[user["id"]] = (fingerprint, ModelCatalog(settings))
+        return await self.catalogs[user["id"]][1].list()
+
+    @staticmethod
+    def masked_key(key: str) -> str:
+        return (key[:8] if len(key) > 12 else "") + "*" * 12
 
     async def user(self, request: web.Request) -> dict[str, Any]:
         token = request.headers.get("X-Swarm-Session", "")
@@ -98,7 +124,21 @@ class Hosting:
                     "error": user["error"],
                     "run_until": user["run_until"],
                     "providers": {p: bool(vault["providers"].get(p)) for p in PROVIDERS},
+                    "provider_keys": {
+                        p: self.masked_key(k) for p, k in vault["providers"].items() if k
+                    },
                     "services": list(PORTS) if user["status"] == "running" else [],
+                }
+            )
+        if request.method == "GET" and route == "models":
+            catalog = await self.models(user, vault)
+            return web.json_response(
+                {
+                    "models": [
+                        {k: m[k] for k in ("id", "provider", "api_id", "name")}
+                        for m in catalog["models"]
+                    ],
+                    "providers": catalog["providers"],
                 }
             )
         if request.method == "POST" and route == "invite":
@@ -132,6 +172,7 @@ class Hosting:
             else:
                 vault["providers"].pop(provider, None)
             await self.store.save_vault(user["id"], vault)
+            self.catalogs.pop(user["id"], None)
             return web.json_response({"ok": True})
         if request.method == "POST" and route in {"start", "pause"}:
             if user["action"]:
@@ -141,8 +182,8 @@ class Hosting:
                 hours = body.get("hours", 8)
                 if hours not in {2, 8, 24}:
                     raise web.HTTPBadRequest(text="Choose a 2, 8, or 24 hour session.")
-                if not vault["providers"].get("openai"):
-                    raise web.HTTPBadRequest(text="Add your OpenAI API key first.")
+                if not any(vault["providers"].values()):
+                    raise web.HTTPBadRequest(text="Add a provider API key first.")
                 deadline = int(time.time()) + int(hours) * 3600
                 if user["status"] == "running":
                     await self.store.sql(
@@ -196,6 +237,7 @@ class Hosting:
 
     async def proxy(self, request: web.Request) -> web.StreamResponse:
         provider, path = request.match_info["provider"], request.match_info["path"]
+        sponsored = provider == "avatar"
         allowed = (
             request.method == "GET"
             and (path == "models" or path.startswith("models/"))
@@ -210,8 +252,9 @@ class Hosting:
             }
         )
         if (
-            provider not in PROVIDERS
+            (provider not in PROVIDERS and not sponsored)
             or not allowed
+            or (sponsored and (request.method != "POST" or path != "images/generations"))
             or any(x in path for x in ["..", "%", "\\", "?"])
         ):
             raise web.HTTPForbidden()
@@ -222,22 +265,53 @@ class Hosting:
         )
         if not supplied or not rows:
             raise web.HTTPUnauthorized()
-        key = self.store.unseal(rows[0])["providers"].get(provider)
+        key = (
+            self.avatar_key if sponsored else self.store.unseal(rows[0])["providers"].get(provider)
+        )
         if not key:
             return web.json_response(
                 {"error": {"message": "Provider not enabled", "code": "provider_not_enabled"}},
                 status=401,
             )
-        headers = self.provider_headers(provider, key)
+        content = await request.read()
+        if sponsored:
+            try:
+                body = json.loads(content)
+            except (ValueError, UnicodeDecodeError) as error:
+                raise web.HTTPBadRequest(text="Invalid avatar request.") from error
+            if (
+                not isinstance(body, dict)
+                or body.get("model") != "gpt-image-2.5-flare"
+                or body.get("n") != 1
+                or body.get("size") != "1024x1024"
+                or body.get("quality") != "low"
+                or body.get("output_format") != "jpeg"
+                or body.get("output_compression") != 80
+                or not isinstance(body.get("prompt"), str)
+                or not 1 <= len(body["prompt"]) <= 4000
+                or set(body)
+                != {
+                    "model",
+                    "n",
+                    "size",
+                    "quality",
+                    "output_format",
+                    "output_compression",
+                    "prompt",
+                }
+            ):
+                raise web.HTTPBadRequest(text="Invalid avatar request.")
+        upstream = "openai" if sponsored else provider
+        headers = self.provider_headers(upstream, key)
         headers["Content-Type"] = "application/json"
         if request.headers.get("anthropic-beta"):
             headers["anthropic-beta"] = request.headers["anthropic-beta"]
         async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
             async with client.stream(
                 request.method,
-                PROVIDERS[provider] + "/" + path,
+                PROVIDERS[upstream] + "/" + path,
                 params=list(request.query.items()),
-                content=await request.read(),
+                content=content,
                 headers=headers,
             ) as response:
                 if response.is_redirect:
@@ -258,6 +332,18 @@ class Hosting:
 
     async def install(self, user: dict[str, Any]) -> None:
         vault = self.store.unseal(user)
+        candidates = [m for m in (await self.models(user, vault))["models"] if m["agent_candidate"]]
+        if not candidates:
+            raise HostingError("No available agent models found for your connected providers.")
+        preferred = ["openai:gpt-6-luna", "anthropic:claude-haiku-5-5", "deepseek:deepseek-flash"]
+        seed = min(
+            candidates,
+            key=lambda m: (
+                preferred.index(m["id"]) if m["id"] in preferred else len(preferred),
+                {"lite": 0, "balanced": 1, "frontier": 2}.get(m["class"], 3),
+                m["id"],
+            ),
+        )
         creds = vault.setdefault(
             "database",
             {"postgres": secrets.token_urlsafe(32), "harness": secrets.token_urlsafe(32)},
@@ -285,7 +371,19 @@ class Hosting:
             "HARNESS_OPENAI_BASE_URL": self.public_url + "/proxy/openai/v1",
             "HARNESS_ANTHROPIC_BASE_URL": self.public_url + "/proxy/anthropic/v1",
             "HARNESS_DEEPSEEK_BASE_URL": self.public_url + "/proxy/deepseek/v1",
-            "OPENAI_API_KEY": token,
+            "HARNESS_SEED_MODEL": seed["id"],
+            "HARNESS_MODEL_PROFILES": json.dumps(
+                {
+                    seed["id"]: {
+                        "input": seed["input"],
+                        "output": seed["output"],
+                        "class": seed["class"],
+                    }
+                }
+            ),
+            "HARNESS_AVATAR_BASE_URL": self.public_url + "/proxy/avatar/v1",
+            "HARNESS_AVATAR_API_KEY": token,
+            "OPENAI_API_KEY": token if vault["providers"].get("openai") else "",
             "ANTHROPIC_API_KEY": token if vault["providers"].get("anthropic") else "",
             "DEEPSEEK_API_KEY": token if vault["providers"].get("deepseek") else "",
             "HOSTED_OWNER_PASSWORD": vault["mattermost_password"],
@@ -472,6 +570,7 @@ def main() -> None:
         os.environ["HOSTING_PUBLIC_URL"].rstrip("/"),
         os.environ["HOSTING_SOURCE_REF"],
         os.environ["HOSTING_OWNER_CODE"],
+        os.environ.get("HOSTING_AVATAR_OPENAI_KEY", ""),
     ).app()
     web.run_app(app, host="0.0.0.0", port=8780, access_log=None)
 

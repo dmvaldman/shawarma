@@ -282,11 +282,11 @@ class Store:
             )
             await c.execute(
                 """INSERT INTO agents(id,workspace_id,identity,model_id,budget)
-                VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING""",
+                VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET model_id=EXCLUDED.model_id""",
                 identity.id,
                 identity.workspace_id,
                 identity.model_dump_json(),
-                settings.openai_model_id,
+                settings.seed_model_id,
                 None,
             )
             await c.execute(

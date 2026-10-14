@@ -22,8 +22,21 @@ The control-plane database and encryption key must be backed up together and sto
 privately. Account revocation/rotation and off-machine automated backup need further
 work before broader distribution.
 
-OpenAI keys are required for initial setup, shared search and profile image creation.
-Anthropic and DeepSeek can be added in settings while paused. Hosted ChatGPT-plan
+Any one of OpenAI, Anthropic or DeepSeek can start a swarm. Provider settings show
+only a short key prefix plus a fixed mask; full keys are never returned. The model
+list uses credential-scoped provider discovery cached for one hour and invalidated
+when keys change. Add/delete operations require a paused workspace.
+
+At startup the seed uses an available model from the connected providers, preferring
+gpt-6-luna, Claude Haiku 5.5 or DeepSeek Flash, then a known lightweight model.
+Only the seed is reassigned when provider settings change; existing workers retain
+their explicit models. OpenAI-backed web search is exposed only when the user has
+an OpenAI key; web retrieval remains available to all agents.
+
+Avatar generation is paid by the host via HOSTING_AVATAR_OPENAI_KEY. Tenant machines
+receive a scoped token for an image-only broker endpoint, not the host's key. That
+endpoint fixes the model, image count, size and quality and rejects text inference.
+The host key is never advertised as an inference provider. Hosted ChatGPT-plan
 inference is not enabled: it needs an approved integration, not the local OSS flow.
 
 ## Deployment and lifecycle
@@ -67,6 +80,7 @@ Run `python -m harness.hosting.server` with:
 - HOSTING_PUBLIC_URL: inference broker URL.
 - HOSTING_SOURCE_REF: deployed full Git commit SHA.
 - AGENT37_API_KEY: platform cloud credential.
+- HOSTING_AVATAR_OPENAI_KEY: host-funded avatar generation only.
 
 Vercel needs only CONTROL_PLANE_URL and CONTROL_PLANE_KEY. No user's provider key
 or global cloud key belongs in its public environment variables.

@@ -382,6 +382,8 @@ class CoreTools:
         self.manifests = TOOLS + (
             [CODING_TOOL] if settings.coding_enabled and settings.agent_engine != "opencode" else []
         )
+        if not settings.openai_api_key.get_secret_value():
+            self.manifests = [tool for tool in self.manifests if tool.name != "web_search"]
         self.activity = Activity(store, settings)
         self.activity.secrets.append(bot.token)
         self.streams = ChannelStream(store, bot, agent_id, settings)
