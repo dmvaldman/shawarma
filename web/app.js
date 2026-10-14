@@ -11,6 +11,8 @@ $('settings-back').addEventListener('click',()=>{location.hash='';showScreen();}
 $('set-provider').addEventListener('click',()=>openSettings(true));
 window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-analytics-height'){const height=Number(event.data.height);if(Number.isFinite(height))$('analytics-frame').style.height=Math.max(500,Math.min(height+8,20000))+'px';}});
 $('analytics-frame').addEventListener('load',()=>{$('analytics-loading').hidden=true;});
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-workspace-status'&&typeof event.data.status==='string'){const status=event.data.status;$('activity-status').textContent=status.charAt(0).toUpperCase()+status.slice(1);$('activity-status').dataset.state=status;$('activity-status').hidden=user?.status!=='running';}});
+
 for(const id of ['guide-close','guide-done'])$(id).addEventListener('click',()=>$('swarm-guide').close());
 $('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setItem(guideKey,'dismissed');}catch{}});
 
@@ -24,7 +26,7 @@ async function refresh(){try{
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
  $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
- const frame=$('analytics-frame');frame.hidden=!running;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
+ const frame=$('analytics-frame');frame.hidden=!running;if(!running)$('activity-status').hidden=true;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
  renderProviders();showScreen();
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;

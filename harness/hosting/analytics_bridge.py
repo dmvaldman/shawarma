@@ -40,11 +40,16 @@ def portal_page() -> tuple[str, str]:
         "if(!url){disconnected();setTimeout(connect,5000);return;}"
         "const socket=new WebSocket(url);",
     )
+    text = text.replace(
+        "function render(data){latest=data;",
+        "function render(data){latest=data;parent.postMessage("
+        "{type:'swarm-workspace-status',status:data.workspace.status},location.origin);",
+    )
     bridge = Path(__file__).with_name("portal_dashboard.js").read_text()
     text = text.replace("let latest=null;", bridge + "\nlet latest=null;")
     text = text.replace(
         "</style>",
-        "header{display:none!important}main{padding:0!important;max-width:none}"
+        "header,.activity-heading{display:none!important}main{padding:0!important;max-width:none}"
         ".connection{margin-left:auto}.statusbar{margin-bottom:18px}"
         "body{overflow-x:hidden}</style>",
     )
