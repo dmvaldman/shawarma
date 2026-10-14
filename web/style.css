@@ -22,3 +22,14 @@
 .product-preview:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 @media(max-width:650px){.product-previews{grid-template-columns:1fr;gap:12px;margin:24px 0 28px}}
 @media(prefers-reduced-motion:reduce){.product-preview::after,.product-preview figcaption{transition:none}}
+
+.welcome-banner{display:flex;justify-content:space-between;align-items:flex-start;gap:28px}
+.welcome-banner>div{min-width:0}
+.welcome-banner #google-login{flex-shrink:0;margin-top:8px;white-space:nowrap}
+.product-preview{cursor:zoom-in;transition:transform .22s ease;transform-origin:center;z-index:0}
+.product-preview:first-child{transform-origin:left center}
+.product-preview:last-child{transform-origin:right center}
+.product-preview.is-expanded{transform:scale(1.5);z-index:2;cursor:zoom-out;box-shadow:0 12px 45px #0009}
+.product-preview.is-expanded::after,.product-preview.is-expanded figcaption{opacity:0}
+@media(max-width:650px){.welcome-banner{flex-wrap:wrap;gap:0}.welcome-banner #google-login{margin:0 0 12px}.product-preview:first-child,.product-preview:last-child{transform-origin:center}}
+@media(prefers-reduced-motion:reduce){.product-preview{transition:none}}

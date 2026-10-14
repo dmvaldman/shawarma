@@ -52,3 +52,13 @@ $('google-login').addEventListener('click',googleSignIn);
 $('google-connect').addEventListener('click',googleSignIn);
 api('auth-config').then(config=>{googleEnabled=config.google;$('google-login').hidden=!googleEnabled;if(user){$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';}}).catch(()=>{});
 const signinError=new URLSearchParams(location.search).get('signin_error');if(signinError){history.replaceState(null,'',location.pathname);error(new Error('Google sign-in was not completed. Please try again.'));}
+
+const previews=[...document.querySelectorAll('.product-preview')];
+function expandPreview(selected){for(const preview of previews){const expanded=preview===selected;preview.classList.toggle('is-expanded',expanded);preview.setAttribute('aria-expanded',String(expanded));preview.setAttribute('aria-label',(expanded?'Shrink ':'Enlarge ')+preview.querySelector('figcaption').textContent.toLowerCase()+' preview');}}
+for(const preview of previews){
+  const toggle=()=>expandPreview(preview.classList.contains('is-expanded')?null:preview);
+  preview.addEventListener('click',toggle);
+  preview.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});
+}
+document.addEventListener('click',event=>{if(!event.target.closest('.product-preview'))expandPreview(null);});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')expandPreview(null);});
