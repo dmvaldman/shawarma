@@ -54,11 +54,14 @@ api('auth-config').then(config=>{googleEnabled=config.google;$('google-login').h
 const signinError=new URLSearchParams(location.search).get('signin_error');if(signinError){history.replaceState(null,'',location.pathname);error(new Error('Google sign-in was not completed. Please try again.'));}
 
 const previews=[...document.querySelectorAll('.product-preview')];
-function expandPreview(selected){for(const preview of previews){const expanded=preview===selected;preview.classList.toggle('is-expanded',expanded);preview.setAttribute('aria-expanded',String(expanded));preview.setAttribute('aria-label',(expanded?'Shrink ':'Enlarge ')+preview.querySelector('figcaption').textContent.toLowerCase()+' preview');}}
+const mobilePreviews=window.matchMedia('(max-width:650px)');
+function expandPreview(selected){for(const preview of previews){const expanded=!mobilePreviews.matches&&preview===selected;const label=preview.querySelector('figcaption').textContent.toLowerCase()+' preview';preview.classList.toggle('is-expanded',expanded);preview.setAttribute('aria-label',mobilePreviews.matches?label:(expanded?'Shrink ':'Enlarge ')+label);if(mobilePreviews.matches){preview.removeAttribute('role');preview.removeAttribute('aria-expanded');}else{preview.setAttribute('role','button');preview.setAttribute('aria-expanded',String(expanded));}}}
 for(const preview of previews){
-  const toggle=()=>expandPreview(preview.classList.contains('is-expanded')?null:preview);
+  const toggle=()=>{if(!mobilePreviews.matches)expandPreview(preview.classList.contains('is-expanded')?null:preview);};
   preview.addEventListener('click',toggle);
-  preview.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});
+  preview.addEventListener('keydown',event=>{if(!mobilePreviews.matches&&(event.key==='Enter'||event.key===' ')){event.preventDefault();toggle();}});
 }
+mobilePreviews.addEventListener('change',()=>expandPreview(null));
+expandPreview(null);
 document.addEventListener('click',event=>{if(!event.target.closest('.product-preview'))expandPreview(null);});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')expandPreview(null);});
