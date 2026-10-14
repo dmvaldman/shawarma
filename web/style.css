@@ -58,4 +58,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 
 .section-title{display:flex;align-items:center;justify-content:flex-start;gap:12px;margin-bottom:16px}.section-title h2{font-size:18px;margin:0}.activity-status{display:inline-block;flex-shrink:0;background:#34303f;color:#c4bded;border-radius:6px;padding:4px 9px;font-size:12px}.activity-status[data-state="active"]{background:#233b34;color:#85e6b8}
 
-@media(max-width:650px){.dashboard-toolbar .section-heading{align-items:center}}
+.dashboard-toolbar .section-heading,.session-status{align-items:baseline}
+.dashboard-toolbar h1,#status,#session-until{line-height:1.2}
