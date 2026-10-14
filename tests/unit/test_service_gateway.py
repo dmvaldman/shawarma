@@ -20,9 +20,13 @@ async def gateway(service, monkeypatch):
             request.match_info["operation"] == "exchange"
             and body.get("ticket") == "one-time-ticket"
         ):
-            return web.json_response({"token": "service-session"})
+            response = web.json_response({"token": "service-session"})
+            response.enable_compression()
+            return response
         if request.match_info["operation"] == "check" and body.get("token") == "service-session":
-            return web.json_response({"ok": True})
+            response = web.json_response({"ok": True})
+            response.enable_compression()
+            return response
         raise web.HTTPUnauthorized()
 
     async def backend(request):
@@ -30,7 +34,9 @@ async def gateway(service, monkeypatch):
         if request.path == "/api/v4/users/login":
             assert await request.json() == {"login_id": "owner", "password": "native-mm-password"}
             response = web.json_response({"id": "owner-id"})
-            response.set_cookie("MMAUTHTOKEN", "native-session", httponly=True)
+            # Mattermost only attaches browser cookies for an XMLHttpRequest login.
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                response.set_cookie("MMAUTHTOKEN", "native-session", httponly=True)
             return response
         if request.path == "/socket":
             ws = web.WebSocketResponse()
@@ -62,7 +68,9 @@ async def gateway(service, monkeypatch):
             + "_URL": "https://service.example",
         }
         app = ServiceGateway(env, {"password": "native-oc-password"}, {"team_name": "my-swarm"})
-        async with ClientSession(cookie_jar=DummyCookieJar()) as proxy_client:
+        async with ClientSession(
+            cookie_jar=DummyCookieJar(), auto_decompress=False
+        ) as proxy_client:
             app.client = proxy_client
             async with TestClient(
                 TestServer(app.app(service)), cookie_jar=DummyCookieJar()

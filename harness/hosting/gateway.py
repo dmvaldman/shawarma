@@ -54,6 +54,7 @@ class ServiceGateway:
             headers={"Authorization": "Bearer " + str(self.env["HOSTED_GATEWAY_KEY"])},
             json=body,
             timeout=ClientTimeout(total=20),
+            auto_decompress=True,
         ) as response:
             if response.status != 200:
                 raise web.HTTPUnauthorized(
@@ -94,6 +95,7 @@ class ServiceGateway:
         if service == "mattermost":
             async with self.client.post(
                 "http://127.0.0.1:" + str(BACK_PORTS["mattermost"]) + "/api/v4/users/login",
+                headers={"X-Requested-With": "XMLHttpRequest", "X-Forwarded-Proto": "https"},
                 json={
                     "login_id": "owner",
                     "password": self.env["HOSTED_OWNER_PASSWORD"],
