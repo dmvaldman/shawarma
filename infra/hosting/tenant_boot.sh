@@ -20,3 +20,17 @@ docker run -d --name swarm-controller --restart unless-stopped --network host \
   --mount type=bind,src=/root/swarm/app,dst=/root/swarm/app \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   swarm-controller
+# Do not announce readiness before the controller has opened the dashboard socket.
+uv run python - <<'PY'
+import time
+import urllib.request
+for attempt in range(90):
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8066/', timeout=3) as response:
+            if response.status == 200:
+                break
+    except OSError:
+        time.sleep(2)
+else:
+    raise SystemExit('Controller did not become ready; inspect protected container logs')
+PY

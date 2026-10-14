@@ -455,7 +455,9 @@ class Analytics:
         self.runner = web.AppRunner(self.app(), access_log=None)
         try:
             await self.runner.setup()
-            await web.TCPSite(self.runner, "127.0.0.1", self.settings.analytics_port).start()
+            await web.TCPSite(
+                self.runner, self.settings.analytics_bind_host, self.settings.analytics_port
+            ).start()
             logging.getLogger(__name__).info(
                 "Analytics dashboard: http://localhost:%s", self.settings.analytics_port
             )

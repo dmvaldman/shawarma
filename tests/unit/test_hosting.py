@@ -121,3 +121,13 @@ async def test_start_requires_key_and_pause_preserves_machine(hosted):
     row = await hosting.store.user(user["id"])
     assert row["instance"] == "same-node" and row["action"] == "pause"
     assert row["run_until"] is None
+    assert (await client.post("/api/credentials", json={}, headers=headers)).status_code == 409
+    hosting.cloud.command.assert_not_awaited()
+
+
+async def test_broker_authentication_and_path_restrictions(hosted):
+    _, client = hosted
+    assert (await client.post("/proxy/openai/v1/responses", json={})).status_code == 401
+    assert (await client.post("/proxy/openai/v1/files", json={})).status_code == 403
+    assert (await client.get("/proxy/not-a-provider/v1/models")).status_code == 403
+    assert (await client.get("/proxy/openai/v1/models/%252e%252e")).status_code == 403

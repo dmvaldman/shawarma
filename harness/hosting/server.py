@@ -174,8 +174,8 @@ class Hosting:
                 raise HostingError("Unexpected service access URL")
             return web.json_response({"url": url})
         if request.method == "POST" and route == "credentials":
-            if not user["instance"]:
-                raise web.HTTPConflict(text="Provision your swarm first.")
+            if not user["instance"] or user["status"] != "running":
+                raise web.HTTPConflict(text="Start your swarm before viewing credentials.")
             data = json.loads(
                 await self.cloud.command(
                     user["instance"],
@@ -316,7 +316,13 @@ class Hosting:
                                 with contextlib.suppress(HostingError):
                                     await self.cloud.command(
                                         user["instance"],
-                                        "docker stop --time 60 swarm-controller; sync",
+                                        "docker stop --time 60 swarm-controller; "
+                                        "cd /root/swarm/app; "
+                                        "docker compose --env-file .env "
+                                        "--env-file .state/coding.env "
+                                        "-f infra/coding/compose.yaml stop; "
+                                        "docker compose --env-file .env "
+                                        "-f infra/compose.yaml stop; sync",
                                     )
                                 await self.cloud.request(
                                     "POST", f"instances/{user['instance']}/stop"
