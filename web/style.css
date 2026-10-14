@@ -12,3 +12,13 @@
 @media(max-width:650px){.section-heading{flex-wrap:wrap;gap:6px}.pill[data-state="queued"],.pill[data-state="provisioning"],.pill[data-state="pausing"]{font-size:18px}}
 
 .google-button{background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:4px;font-weight:500;margin-top:12px}#google-login{display:block}
+
+.product-previews{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:32px 0 40px}
+.product-preview{position:relative;aspect-ratio:2940/1648;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:#101115}
+.product-preview img{display:block;width:100%;height:100%;object-fit:cover}
+.product-preview::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.62);transition:opacity .22s ease;pointer-events:none}
+.product-preview figcaption{position:absolute;inset:0;z-index:1;display:grid;place-items:center;color:#fff;font-size:14px;font-weight:650;letter-spacing:.18em;transition:opacity .22s ease;pointer-events:none}
+.product-preview:hover::after,.product-preview:focus::after,.product-preview:hover figcaption,.product-preview:focus figcaption{opacity:0}
+.product-preview:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+@media(max-width:650px){.product-previews{grid-template-columns:1fr;gap:12px;margin:24px 0 28px}}
+@media(prefers-reduced-motion:reduce){.product-preview::after,.product-preview figcaption{transition:none}}
