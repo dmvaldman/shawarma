@@ -399,8 +399,11 @@ async def test_native_catalog_rejects_provider_models_unavailable_in_opencode(mo
             )
         ),
     )
-    result = await catalog.list()
+    result = await catalog.list_for_agents()
     assert [m["id"] for m in result["models"] if m["agent_candidate"]] == ["openai:gpt-6-luna"]
     with pytest.raises(ValueError, match="MODEL_NOT_ALLOWED"):
-        await catalog.resolve("openai:gpt-3.5-turbo")
+        await catalog.resolve_for_agent("openai:gpt-3.5-turbo")
     assert (await catalog.resolve("openai:gpt-6-luna"))["api_id"] == "gpt-6-luna"
+
+    # Seed/provider inference remains independent of worker availability.
+    assert (await catalog.resolve("openai:gpt-3.5-turbo"))["api_id"] == "gpt-3.5-turbo"

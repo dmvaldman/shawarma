@@ -169,23 +169,6 @@ class ModelCatalog:
 
                 names = self.providers()
                 results = await asyncio.gather(*(fetch(n, *value) for n, value in names.items()))
-            if self.settings.agent_engine == "opencode" and self.settings.coding_enabled:
-                client = OpenCode(self.settings)
-                try:
-                    runtime = await client.request("GET", "/provider")
-                finally:
-                    await client.close()
-                available = {
-                    p["id"] + ":" + mid
-                    for p in runtime["all"]
-                    if p["id"] in runtime["connected"]
-                    for mid, meta in p["models"].items()
-                    if meta.get("limit", {}).get("context", 0) > 0
-                    and meta.get("capabilities", {}).get("toolcall", True)
-                }
-                for models, _ in results:
-                    for model in models:
-                        model["agent_candidate"] &= model["id"] in available
             self.result = {
                 "models": sorted(
                     [m for models, _ in results for m in models], key=lambda m: m["id"]
@@ -195,6 +178,37 @@ class ModelCatalog:
             }
             self.expires = time.monotonic() + self.settings.model_cache_ttl_sec
             return {**self.result, "cached": False}
+
+    async def list_for_agents(self) -> dict[str, Any]:
+        result = await self.list()
+        if self.settings.agent_engine != "opencode" or not self.settings.coding_enabled:
+            return result
+        client = OpenCode(self.settings)
+        try:
+            runtime = await client.request("GET", "/provider")
+        finally:
+            await client.close()
+        available = {
+            p["id"] + ":" + mid
+            for p in runtime["all"]
+            if p["id"] in runtime["connected"]
+            for mid, meta in p["models"].items()
+            if meta.get("limit", {}).get("context", 0) > 0
+        }
+        return {
+            **result,
+            "models": [
+                {**m, "agent_candidate": m["agent_candidate"] and m["id"] in available}
+                for m in result["models"]
+            ],
+        }
+
+    async def resolve_for_agent(self, value: str) -> dict[str, Any]:
+        model = await self.resolve(value)
+        available = (await self.list_for_agents())["models"]
+        if not any(m["id"] == model["id"] and m["agent_candidate"] for m in available):
+            raise ValueError("MODEL_NOT_ALLOWED: choose a runnable agent model from list_models")
+        return model
 
     async def resolve(self, value: str) -> dict[str, Any]:
         # Accept an unambiguous provider/model spelling; never invent or substitute a model.

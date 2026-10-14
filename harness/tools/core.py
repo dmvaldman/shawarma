@@ -656,7 +656,7 @@ class CoreTools:
                     lambda: fetch_page(args["url"]),
                 )
             elif name == "list_models":
-                catalog = await self.catalog.list()
+                catalog = await self.catalog.list_for_agents()
                 models = [
                     m
                     for m in catalog["models"]

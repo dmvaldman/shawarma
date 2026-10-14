@@ -24,7 +24,7 @@ class Coordination:
     async def reserve(self, parent_id: UUID, call_id: str, args: dict[str, Any]) -> UUID:
         parent = await self.store.state(parent_id)
         model = args.get("model", parent["model_id"])
-        metadata = await self.catalog.resolve(model)
+        metadata = await self.catalog.resolve_for_agent(model)
         args = {**args, "model": metadata["id"]}
         if args.get("tools"):
             raise ValueError("CUSTOM_TOOLS_UNAVAILABLE: M4; core tools are always inherited")
