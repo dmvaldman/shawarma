@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     typing_yield_max_sec: float = Field(default=3, ge=0)
     analytics_port: int = Field(default=8066, ge=1, le=65535)
     analytics_bind_host: str = "127.0.0.1"
+    analytics_proxy_hosts: list[str] = Field(default_factory=list)
     slash_bind_host: str = "0.0.0.0"
     slash_port: int = Field(default=8766, ge=1, le=65535)
     slash_callback_url: HttpUrl = HttpUrl("http://host.docker.internal:8766/mattermost/commands")

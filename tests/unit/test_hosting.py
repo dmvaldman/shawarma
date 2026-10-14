@@ -131,3 +131,47 @@ async def test_broker_authentication_and_path_restrictions(hosted):
     assert (await client.post("/proxy/openai/v1/files", json={})).status_code == 403
     assert (await client.get("/proxy/not-a-provider/v1/models")).status_code == 403
     assert (await client.get("/proxy/openai/v1/models/%252e%252e")).status_code == 403
+
+
+async def test_broker_inserts_only_owners_key_and_preserves_stream(hosted, monkeypatch):
+    from harness.hosting.server import PROVIDERS
+
+    hosting, client = hosted
+    observed = []
+
+    async def upstream(request):
+        observed.append((request.headers.get("Authorization"), await request.json()))
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await response.prepare(request)
+        await response.write(b"data: first\n\n")
+        await response.write(b"data: [DONE]\n\n")
+        await response.write_eof()
+        return response
+
+    app = web.Application()
+    app.router.add_post("/responses", upstream)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    monkeypatch.setitem(PROVIDERS, "openai", f"http://127.0.0.1:{port}")
+    try:
+        token = await login(client, "owner-code")
+        user = (await client.get("/api/me", headers={"X-Swarm-Session": token})).json()
+        row = await hosting.store.user(user["id"])
+        vault = hosting.store.unseal(row)
+        vault["providers"]["openai"] = "owners-real-key"
+        await hosting.store.save_vault(row["id"], vault)
+        response = await client.post(
+            "/proxy/openai/v1/responses",
+            headers={"Authorization": "Bearer " + vault["agent_token"]},
+            json={"stream": True, "input": "hello"},
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream"
+        assert response.text == "data: first\n\ndata: [DONE]\n\n"
+        assert observed == [("Bearer owners-real-key", {"stream": True, "input": "hello"})]
+        assert "owners-real-key" not in response.text
+    finally:
+        await runner.cleanup()

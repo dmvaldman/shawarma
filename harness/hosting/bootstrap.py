@@ -1,6 +1,8 @@
 """Bootstrap a fresh private tenant VM; never prints service passwords or tokens."""
 
 import asyncio
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,9 +15,11 @@ from harness.coding.setup import update_env
 async def bootstrap() -> None:
     env = dotenv_values(".env")
     if "--finalize" in sys.argv:
+        addresses = await asyncio.to_thread(subprocess.check_output, ["hostname", "-I"], text=True)
         update_env(
             {
                 "HARNESS_ANALYTICS_BIND_HOST": "0.0.0.0",
+                "HARNESS_ANALYTICS_PROXY_HOSTS": json.dumps(addresses.split()),
                 "HARNESS_MATTERMOST_PUBLIC_URL": str(env["HOSTED_MATTERMOST_URL"]),
                 "HARNESS_GITEA_PUBLIC_URL": str(env["HOSTED_GITEA_URL"]),
                 "HARNESS_OPENCODE_PUBLIC_URL": str(env["HOSTED_OPENCODE_URL"]),

@@ -428,6 +428,9 @@ class Analytics:
             allowed_hosts = {"localhost", "127.0.0.1", "::1"}
             if public:
                 allowed_hosts.add(urlsplit(public).hostname or "")
+                # Agent37 forwards the VM's private address as Host. These addresses
+                # are recorded by tenant bootstrap; public browser Origin stays exact.
+                allowed_hosts.update(self.settings.analytics_proxy_hosts)
             if host not in allowed_hosts or (
                 origin and origin not in {f"{request.scheme}://{request.host}", public}
             ):
