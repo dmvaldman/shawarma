@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from harness.coding.clients import OpenCode
 from harness.config import Settings
 
 # Conservative standard-tier prices; no cache/batch discounts. Unknown models use
@@ -168,6 +169,23 @@ class ModelCatalog:
 
                 names = self.providers()
                 results = await asyncio.gather(*(fetch(n, *value) for n, value in names.items()))
+            if self.settings.agent_engine == "opencode" and self.settings.coding_enabled:
+                client = OpenCode(self.settings)
+                try:
+                    runtime = await client.request("GET", "/provider")
+                finally:
+                    await client.close()
+                available = {
+                    p["id"] + ":" + mid
+                    for p in runtime["all"]
+                    if p["id"] in runtime["connected"]
+                    for mid, meta in p["models"].items()
+                    if meta.get("limit", {}).get("context", 0) > 0
+                    and meta.get("capabilities", {}).get("toolcall", True)
+                }
+                for models, _ in results:
+                    for model in models:
+                        model["agent_candidate"] &= model["id"] in available
             self.result = {
                 "models": sorted(
                     [m for models, _ in results for m in models], key=lambda m: m["id"]

@@ -369,3 +369,38 @@ async def test_seed_verification_uses_only_configured_provider(provider, model):
         assert len(calls) == 1
     finally:
         await router.close()
+
+
+async def test_native_catalog_rejects_provider_models_unavailable_in_opencode(monkeypatch):
+    from harness.coding.clients import OpenCode
+
+    async def runtime(self, method, path):
+        assert (method, path) == ("GET", "/provider")
+        return {
+            "connected": ["openai"],
+            "all": [
+                {
+                    "id": "openai",
+                    "models": {
+                        "gpt-6-luna": {"limit": {"context": 100000}},
+                        "gpt-4": {"limit": {"context": 0}},
+                    },
+                }
+            ],
+        }
+
+    monkeypatch.setattr(OpenCode, "request", runtime)
+    config = settings().model_copy(update={"agent_engine": "opencode", "coding_enabled": True})
+    catalog = ModelCatalog(
+        config,
+        httpx.MockTransport(
+            lambda r: httpx.Response(
+                200, json={"data": [{"id": "gpt-3.5-turbo"}, {"id": "gpt-6-luna"}, {"id": "gpt-4"}]}
+            )
+        ),
+    )
+    result = await catalog.list()
+    assert [m["id"] for m in result["models"] if m["agent_candidate"]] == ["openai:gpt-6-luna"]
+    with pytest.raises(ValueError, match="MODEL_NOT_ALLOWED"):
+        await catalog.resolve("openai:gpt-3.5-turbo")
+    assert (await catalog.resolve("openai:gpt-6-luna"))["api_id"] == "gpt-6-luna"
