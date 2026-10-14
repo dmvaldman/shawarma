@@ -45,7 +45,7 @@ class Cloud:
     async def install(self, instance: str, env: dict[str, str], source_ref: str) -> None:
         payload = base64.b64encode(json.dumps(env).encode()).decode()
         command = (
-            "set -eu; mkdir -p /root/swarm; systemctl stop swarm.service 2>/dev/null || true; "
+            "set -eu; mkdir -p /root/swarm; docker stop --time 60 swarm-controller 2>/dev/null || true; "
             "if [ ! -d /root/swarm/app/.git ]; then "
             "git clone -q https://github.com/dmvaldman/shawarma.git /root/swarm/app; fi; "
             "cd /root/swarm/app; git fetch -q origin; git checkout -q "

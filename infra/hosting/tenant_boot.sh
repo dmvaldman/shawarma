@@ -14,18 +14,9 @@ uv run agent-company-coding up
 # Make the OpenCode port reachable by the private Agent37 edge, retaining Basic auth.
 docker compose --env-file .env --env-file .state/coding.env -f infra/coding/compose.yaml -f infra/hosting/coding-compose.yaml up -d worker gitea
 uv run python -m harness.hosting.bootstrap --finalize
-cat >/etc/systemd/system/swarm.service <<'UNIT'
-[Unit]
-Description=Personal swarm controller
-After=docker.service
-[Service]
-WorkingDirectory=/root/swarm/app
-ExecStart=/root/swarm/app/.venv/bin/agent-company start
-Restart=on-failure
-RestartSec=5
-[Install]
-WantedBy=multi-user.target
-UNIT
-systemctl daemon-reload
-systemctl enable swarm.service
-systemctl restart swarm.service
+docker build -q -t swarm-controller -f infra/hosting/controller.Dockerfile .
+docker rm -f swarm-controller 2>/dev/null || true
+docker run -d --name swarm-controller --restart unless-stopped --network host \
+  --mount type=bind,src=/root/swarm/app,dst=/root/swarm/app \
+  --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+  swarm-controller

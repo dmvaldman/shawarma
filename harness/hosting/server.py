@@ -315,7 +315,8 @@ class Hosting:
                                 )
                                 with contextlib.suppress(HostingError):
                                     await self.cloud.command(
-                                        user["instance"], "systemctl stop swarm.service; sync"
+                                        user["instance"],
+                                        "docker stop --time 60 swarm-controller; sync",
                                     )
                                 await self.cloud.request(
                                     "POST", f"instances/{user['instance']}/stop"
