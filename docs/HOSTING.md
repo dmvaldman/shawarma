@@ -143,3 +143,17 @@ provider keys are retained. Stop immediately blocks further inference through th
 broker. Play after Stop provisions a fresh VM and seed. The destructive Stop button
 explains this before executing. This differs from Mattermost's existing `/stop` work
 control, which does not delete the hosting instance.
+
+
+Provider billing admin keys are configured separately from inference keys in Settings.
+OpenAI and Anthropic admin keys are validated against their read-only cost endpoints,
+encrypted in the tenant's control-plane vault, and returned only as masked prefixes.
+They are never installed in worker environments or used by the inference broker.
+The control plane enriches dashboard snapshots with provider-reported billing; absent
+admin keys produce a setup link rather than an unavailable provider row. DeepSeek uses
+its inference key for balance reporting, which remains separate from reported costs.
+Billing baselines persist in control-plane SQLite by user, workspace, reset timestamp,
+provider and credential fingerprint. They are captured on first successful access and
+reused after restarts; a new reset or credential establishes a new baseline. Reports
+are cached for 60 seconds and may be delayed by providers. Key changes reload the
+embedded analytics stream without restarting agents or requiring a pause.

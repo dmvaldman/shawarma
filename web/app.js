@@ -1,5 +1,5 @@
 'use strict';
-const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature=null,googleEnabled=false,lastWorkspaceStatus=null,guideKey=null;
+const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature=null,googleEnabled=false,lastWorkspaceStatus=null,guideKey=null,adminSignature=null;
 async function api(route,data){const response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
 function error(e){$('error').textContent=e.message;$('error').hidden=false;}
 async function action(fn){if(busy)return;busy=true;$('error').hidden=true;try{await fn();await refresh();}catch(e){error(e);}finally{busy=false;}}
@@ -27,7 +27,7 @@ async function refresh(){try{
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
  $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
  const frame=$('analytics-frame');frame.hidden=!running;if(!running)$('activity-status').hidden=true;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
- renderProviders();showScreen();
+ renderProviders();renderAdminKeys();showScreen();
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;
  }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');document.querySelector('main').classList.remove('is-account');}else error(e);}}
@@ -61,7 +61,7 @@ $('add-provider').addEventListener('click',()=>{$('provider-form').hidden=false;
 $('cancel-provider').addEventListener('click',()=>{$('provider-form').hidden=true;$('provider-key').value='';});
 
 $('login-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('redeem',{code:$('invite-code').value.trim()});sessionStorage.removeItem('swarm-invite');$('invite-code').value='';renderSignature=null;});});
-async function signOut(){await action(async()=>{await api('logout',{});renderSignature=null;$('provider-key').value='';$('provider-form').hidden=true;$('inference-providers').open=false;$('invite-result').replaceChildren();});}
+async function signOut(){await action(async()=>{await api('logout',{});renderSignature=null;adminSignature=null;$('billing-key').value='';$('admin-key-form').hidden=true;$('provider-admin-keys').open=false;$('provider-key').value='';$('provider-form').hidden=true;$('inference-providers').open=false;$('invite-result').replaceChildren();});}
 $('logout').addEventListener('click',signOut);
 $('activation-logout').addEventListener('click',signOut);
 $('provider-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('providers',{provider:$('provider').value,key:$('provider-key').value});$('provider-key').value='';$('provider-form').hidden=true;});});
@@ -98,3 +98,27 @@ mobilePreviews.addEventListener('change',()=>expandPreview(null));
 expandPreview(null);
 document.addEventListener('click',event=>{if(!event.target.closest('.product-preview'))expandPreview(null);});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')expandPreview(null);});
+
+function openBillingSettings(){openSettings();$('provider-admin-keys').open=true;$('provider-admin-keys').scrollIntoView({block:'start'});}
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-billing-settings')openBillingSettings();});
+function resetAnalytics(){$('analytics-frame').removeAttribute('src');}
+function renderAdminKeys(){
+ const keys=user.admin_keys||{},signature=JSON.stringify(keys);if(signature===adminSignature)return;adminSignature=signature;
+ $('admin-key-list').replaceChildren();
+ for(const [provider,key] of Object.entries(keys)){
+  const row=document.createElement('div');row.className='provider-row';
+  const heading=document.createElement('div');heading.className='provider-heading';
+  const name=document.createElement('strong');name.textContent=providerNames[provider];
+  const masked=document.createElement('code');masked.className='provider-key';masked.textContent=key;
+  const remove=document.createElement('button');remove.type='button';remove.className='delete-provider';remove.textContent='Delete';remove.setAttribute('aria-label','Delete '+providerNames[provider]+' admin key');
+  remove.addEventListener('click',()=>action(async()=>{await api('admin-keys',{provider,key:''});resetAnalytics();}));
+  heading.append(name,masked,remove);row.append(heading);$('admin-key-list').append(row);
+ }
+ const available=['openai','anthropic'].filter(provider=>!keys[provider]),current=$('billing-provider').value;$('billing-provider').replaceChildren();
+ for(const provider of available){const option=document.createElement('option');option.value=provider;option.textContent=providerNames[provider];$('billing-provider').append(option);}
+ if(available.includes(current))$('billing-provider').value=current;
+ $('add-admin-key').hidden=!available.length;
+}
+$('add-admin-key').addEventListener('click',()=>{$('admin-key-form').hidden=false;$('billing-provider').focus();});
+$('cancel-admin-key').addEventListener('click',()=>{$('admin-key-form').hidden=true;$('billing-key').value='';});
+$('admin-key-form').addEventListener('submit',event=>{event.preventDefault();action(async()=>{await api('admin-keys',{provider:$('billing-provider').value,key:$('billing-key').value});$('billing-key').value='';$('admin-key-form').hidden=true;resetAnalytics();});});

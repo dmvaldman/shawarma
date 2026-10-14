@@ -573,3 +573,70 @@ async def test_analytics_websocket_ticket_is_single_use_and_revoked_on_logout(ho
             assert connection.await_args.args[0]["id"] == owner["id"]
     finally:
         await runner.cleanup()
+
+
+async def test_admin_keys_are_separate_encrypted_and_never_sent_to_workers(hosted, monkeypatch):
+    from decimal import Decimal
+
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    owner = (await client.get("/api/me", headers=headers)).json()
+    row = await hosting.store.user(owner["id"])
+    vault = hosting.store.unseal(row)
+    vault["providers"]["openai"] = "private-inference-key"
+    await hosting.store.save_vault(row["id"], vault)
+    monkeypatch.setattr(
+        "harness.hosting.server.read_provider_cost", AsyncMock(return_value=Decimal("10"))
+    )
+    secret = "private-admin-key-for-billing"
+    await hosting.store.sql("UPDATE users SET status='running' WHERE id=?", (row["id"],))
+    saved = await client.post(
+        "/api/admin-keys", headers=headers, json={"provider": "openai", "key": secret}
+    )
+    assert saved.status_code == 200
+    me = (await client.get("/api/me", headers=headers)).json()
+    assert me["admin_keys"]["openai"] == secret[:8] + "*" * 12
+    assert secret not in json.dumps(me)
+    row = await hosting.store.user(row["id"])
+    assert secret not in row["vault"]
+    assert hosting.store.unseal(row)["providers"]["openai"] == "private-inference-key"
+    await hosting.store.invite("Alice", code="alice")
+    other = {"X-Swarm-Session": await login(client, "alice")}
+    assert (await client.get("/api/me", headers=other)).json()["admin_keys"] == {}
+    assert (
+        await client.post(
+            "/api/admin-keys", headers=headers, json={"provider": "deepseek", "key": secret}
+        )
+    ).status_code == 400
+    monkeypatch.setattr(
+        hosting,
+        "models",
+        AsyncMock(
+            return_value={
+                "models": [
+                    {
+                        "id": "openai:model",
+                        "agent_candidate": True,
+                        "input": "1",
+                        "output": "2",
+                        "class": "lite",
+                    }
+                ]
+            }
+        ),
+    )
+    hosting.cloud.install = AsyncMock()
+    row["instance"] = "test-node"
+    await hosting.install(row)
+    env = hosting.cloud.install.call_args.args[1]
+    assert secret not in json.dumps(env) and "private-inference-key" not in json.dumps(env)
+    assert (
+        await client.post(
+            "/api/admin-keys", headers=headers, json={"provider": "openai", "key": ""}
+        )
+    ).status_code == 200
+    assert (await client.get("/api/me", headers=headers)).json()["admin_keys"] == {}
+    assert (
+        hosting.store.unseal(await hosting.store.user(row["id"]))["providers"]["openai"]
+        == "private-inference-key"
+    )

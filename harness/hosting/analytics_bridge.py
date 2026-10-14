@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import json
 import secrets
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from uuid import UUID
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
+from harness.hosting.billing import HostedBilling
 from harness.hosting.cloud import Cloud, HostingError
 from harness.hosting.store import HostingStore, digest
 
@@ -62,8 +64,15 @@ def portal_page() -> tuple[str, str]:
 
 
 class AnalyticsBridge:
-    def __init__(self, store: HostingStore, cloud: Cloud, public_url: str):
+    def __init__(
+        self,
+        store: HostingStore,
+        cloud: Cloud,
+        public_url: str,
+        billing: HostedBilling | None = None,
+    ):
         self.store, self.cloud, self.public_url = store, cloud, public_url
+        self.billing = billing
         self.connections: dict[tuple[str, str, str], tuple[ClientSession, str, float]] = {}
         self.lock = asyncio.Lock()
 
@@ -191,7 +200,16 @@ class AnalyticsBridge:
             async def relay() -> None:
                 async for message in upstream:
                     if message.type == WSMsgType.TEXT:
-                        await output.send_str(message.data)
+                        payload = json.loads(message.data)
+                        if (
+                            self.billing
+                            and payload.get("type") == "snapshot"
+                            and payload.get("data", {}).get("workspace")
+                        ):
+                            payload["data"]["billing"] = await self.billing.snapshot(
+                                user["id"], payload["data"]["workspace"]
+                            )
+                        await output.send_json(payload)
 
             async def watch() -> None:
                 async for _ in output:

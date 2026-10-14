@@ -1,4 +1,4 @@
-const routes=new Set(['analytics','dashboard-connect','stop','redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
+const routes=new Set(['admin-keys','analytics','dashboard-connect','stop','redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
 const sessionCookie=value=>'__Host-swarm_session='+value+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000';
 const clearOAuth='__Host-swarm_oauth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
 export default async function handler(req,res){

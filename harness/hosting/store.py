@@ -41,6 +41,12 @@ class HostingStore:
                     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL,
                     session_hash TEXT NOT NULL, service TEXT NOT NULL, expires INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS provider_cost_baselines (
+                    user_id TEXT NOT NULL, workspace_id TEXT NOT NULL, run_ms INTEGER NOT NULL,
+                    provider TEXT NOT NULL, credential_hash TEXT NOT NULL, amount TEXT NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    PRIMARY KEY(user_id,workspace_id,run_ms,provider,credential_hash)
+                );
                 CREATE TABLE IF NOT EXISTS oauth_flows (
                     state_hash TEXT PRIMARY KEY, browser_hash TEXT NOT NULL,
                     vault TEXT NOT NULL, expires INTEGER NOT NULL

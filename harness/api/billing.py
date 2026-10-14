@@ -14,6 +14,63 @@ from harness.config import Settings
 from harness.persistence.store import Store
 
 
+async def read_provider_cost(
+    name: str,
+    base: str,
+    headers: dict[str, str],
+    start: int,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> Decimal:
+    async with asyncio.timeout(8), httpx.AsyncClient(transport=transport, timeout=6) as c:
+        if name == "deepseek":
+            r = await c.get(base + "/user/balance", headers=headers)
+            r.raise_for_status()
+            balances = r.json()["balance_infos"]
+            usd = next(x for x in balances if x["currency"] == "USD")
+            amount = Decimal(usd["total_balance"])
+            if not amount.is_finite():
+                raise ValueError("Invalid balance")
+            return amount
+        endpoint = "/organization/costs" if name == "openai" else "/organizations/cost_report"
+        params: dict[str, Any] = (
+            {"start_time": start, "bucket_width": "1d", "limit": 180}
+            if name == "openai"
+            else {
+                "starting_at": datetime.fromtimestamp(start, UTC).isoformat(),
+                "bucket_width": "1d",
+                "limit": 31,
+            }
+        )
+        total = Decimal(0)
+        seen: set[str] = set()
+        while True:
+            r = await c.get(base + endpoint, headers=headers, params=params)
+            r.raise_for_status()
+            data = r.json()
+            for bucket in data["data"]:
+                for row in bucket["results"]:
+                    raw = row["amount"]
+                    # OpenAI reports dollars; Claude reports decimal cents.
+                    if name == "openai":
+                        if raw["currency"].lower() != "usd":
+                            raise ValueError("Non-USD cost")
+                        amount = Decimal(str(raw["value"]))
+                    else:
+                        if row["currency"].lower() != "usd":
+                            raise ValueError("Non-USD cost")
+                        amount = Decimal(str(raw)) / 100
+                    if not amount.is_finite():
+                        raise ValueError("Invalid cost")
+                    total += amount
+            if not data.get("has_more"):
+                return total
+            cursor = data.get("next_page")
+            if not cursor or cursor in seen:
+                raise ValueError("Invalid billing pagination")
+            seen.add(cursor)
+            params["page"] = cursor
+
+
 class Billing:
     def __init__(
         self, store: Store, settings: Settings, transport: httpx.AsyncBaseTransport | None = None
@@ -48,54 +105,7 @@ class Billing:
         return values
 
     async def read(self, name: str, base: str, headers: dict[str, str], start: int) -> Decimal:
-        async with asyncio.timeout(8), httpx.AsyncClient(transport=self.transport, timeout=6) as c:
-            if name == "deepseek":
-                r = await c.get(base + "/user/balance", headers=headers)
-                r.raise_for_status()
-                balances = r.json()["balance_infos"]
-                usd = next(x for x in balances if x["currency"] == "USD")
-                amount = Decimal(usd["total_balance"])
-                if not amount.is_finite():
-                    raise ValueError("Invalid balance")
-                return amount
-            endpoint = "/organization/costs" if name == "openai" else "/organizations/cost_report"
-            params: dict[str, Any] = (
-                {"start_time": start, "bucket_width": "1d", "limit": 180}
-                if name == "openai"
-                else {
-                    "starting_at": datetime.fromtimestamp(start, UTC).isoformat(),
-                    "bucket_width": "1d",
-                    "limit": 31,
-                }
-            )
-            total = Decimal(0)
-            seen: set[str] = set()
-            while True:
-                r = await c.get(base + endpoint, headers=headers, params=params)
-                r.raise_for_status()
-                data = r.json()
-                for bucket in data["data"]:
-                    for row in bucket["results"]:
-                        raw = row["amount"]
-                        # OpenAI reports dollars; Claude reports decimal cents.
-                        if name == "openai":
-                            if raw["currency"].lower() != "usd":
-                                raise ValueError("Non-USD cost")
-                            amount = Decimal(str(raw["value"]))
-                        else:
-                            if row["currency"].lower() != "usd":
-                                raise ValueError("Non-USD cost")
-                            amount = Decimal(str(raw)) / 100
-                        if not amount.is_finite():
-                            raise ValueError("Invalid cost")
-                        total += amount
-                if not data.get("has_more"):
-                    return total
-                cursor = data.get("next_page")
-                if not cursor or cursor in seen:
-                    raise ValueError("Invalid billing pagination")
-                seen.add(cursor)
-                params["page"] = cursor
+        return await read_provider_cost(name, base, headers, start, self.transport)
 
     async def snapshot(self, workspace: UUID, run_ms: int) -> dict[str, Any]:
         key = (workspace, run_ms)

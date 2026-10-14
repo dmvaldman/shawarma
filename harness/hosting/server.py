@@ -15,8 +15,10 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from aiohttp import web
 
+from harness.api.billing import read_provider_cost
 from harness.config import Settings
 from harness.hosting.analytics_bridge import AnalyticsBridge
+from harness.hosting.billing import ADMIN_PROVIDERS, HostedBilling, billing_headers
 from harness.hosting.cloud import Cloud, HostingError
 from harness.hosting.google import GoogleLogin
 from harness.hosting.paths import service_path
@@ -50,7 +52,8 @@ class Hosting:
         self.owner_code = owner_code
         self.avatar_key = avatar_key
         self.google = GoogleLogin(store, google_client_id, google_client_secret)
-        self.analytics = AnalyticsBridge(store, cloud, public_url)
+        self.billing = HostedBilling(store, PROVIDERS)
+        self.analytics = AnalyticsBridge(store, cloud, public_url, self.billing)
         self.catalogs: dict[str, tuple[str, ModelCatalog]] = {}
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
@@ -142,6 +145,9 @@ class Hosting:
                     "error": user["error"],
                     "run_until": user["run_until"],
                     "providers": {p: bool(vault["providers"].get(p)) for p in PROVIDERS},
+                    "admin_keys": {
+                        p: self.masked_key(k) for p, k in vault.get("admin_keys", {}).items() if k
+                    },
                     "provider_keys": {
                         p: self.masked_key(k) for p, k in vault["providers"].items() if k
                     },
@@ -189,6 +195,27 @@ class Hosting:
                 raise web.HTTPConflict(text="The friends beta currently has ten places.")
             code = await self.store.invite(name)
             return web.json_response({"url": "https://swarm.forum/#invite=" + code})
+        if request.method == "POST" and route == "admin-keys":
+            body = await request.json()
+            provider, key = body.get("provider"), str(body.get("key", "")).strip()
+            if provider not in ADMIN_PROVIDERS or len(key) > 1000:
+                raise web.HTTPBadRequest(text="Choose OpenAI or Anthropic and enter an admin key.")
+            if key:
+                try:
+                    # Include yesterday because current-day Anthropic reports may not exist yet.
+                    start = int(time.time()) // 86400 * 86400 - 86400
+                    await read_provider_cost(
+                        provider, PROVIDERS[provider], billing_headers(provider, key), start
+                    )
+                except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
+                    raise web.HTTPBadRequest(
+                        text="Could not read billing with this key. Check its billing permissions."
+                    ) from None
+                vault.setdefault("admin_keys", {})[provider] = key
+            else:
+                vault.setdefault("admin_keys", {}).pop(provider, None)
+            await self.store.save_vault(user["id"], vault)
+            return web.json_response({"ok": True})
         if request.method == "POST" and route == "providers":
             body = await request.json()
             provider, key = body.get("provider"), str(body.get("key", "")).strip()
