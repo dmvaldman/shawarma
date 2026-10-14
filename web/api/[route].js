@@ -1,4 +1,4 @@
-const routes=new Set(['redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
+const routes=new Set(['analytics','dashboard-connect','stop','redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
 const sessionCookie=value=>'__Host-swarm_session='+value+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000';
 const clearOAuth='__Host-swarm_oauth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
 export default async function handler(req,res){
@@ -6,7 +6,7 @@ export default async function handler(req,res){
   res.setHeader('Referrer-Policy','no-referrer');
   const route=req.query.route;
   if(!routes.has(route))return res.status(404).json({error:'Not found.'});
-  if(req.method!==(['me','models','auth-config','google-callback'].includes(route)?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
+  if(req.method!==(['analytics','me','models','auth-config','google-callback'].includes(route)?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
   if(req.method==='POST'&&req.headers.origin!=='https://'+req.headers.host)return res.status(403).json({error:'Origin rejected.'});
   if(!process.env.CONTROL_PLANE_URL||!process.env.CONTROL_PLANE_KEY)return res.status(503).json({error:'The beta is being prepared. Please check back shortly.'});
   const cookies={};
@@ -22,7 +22,13 @@ export default async function handler(req,res){
       res.setHeader('Set-Cookie',[sessionCookie(data.session),clearOAuth]);
       return res.redirect(302,'/');
     }
-    const response=await fetch(process.env.CONTROL_PLANE_URL+'/api/'+route,{method:req.method,headers,body:req.method==='POST'?JSON.stringify(req.body||{}):undefined,signal:AbortSignal.timeout(55000)});
+    const query=new URLSearchParams();if(route==='analytics')for(const key of ['resource','agent','limit','before'])if(typeof req.query[key]==='string')query.set(key,req.query[key]);
+    const response=await fetch(process.env.CONTROL_PLANE_URL+'/api/'+route+(query.size?'?'+query:''),{method:req.method,headers,body:req.method==='POST'?JSON.stringify(req.body||{}):undefined,signal:AbortSignal.timeout(55000)});
+    if(response.ok&&route==='analytics'){
+      res.setHeader('Content-Type',response.headers.get('Content-Type'));
+      const policy=response.headers.get('Content-Security-Policy');if(policy)res.setHeader('Content-Security-Policy',policy);
+      return res.status(200).send(Buffer.from(await response.arrayBuffer()));
+    }
     const data=await response.json();
     if(response.ok&&route==='login'){
       res.setHeader('Set-Cookie',sessionCookie(data.session));delete data.session;

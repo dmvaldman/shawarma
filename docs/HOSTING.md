@@ -125,3 +125,21 @@ changes, missing containers, or a missing checkpoint run the normal installer. T
 checkpoint is cleared before installing and written only after successful setup;
 failed updates cannot be treated as ready. Existing deployments require one installer
 run to establish this checkpoint. VM boot and service readiness still take time.
+
+
+The signed-in portal shows the analytics view in place, using a same-origin embedded
+view and an authenticated WebSocket bridge. Provider settings, sign-out, and the
+operator's invitations live in Settings. The bridge reuses tenant SSO server-side;
+service cookies and infrastructure keys never enter browser JavaScript. Stream
+connection tickets are single-use, expire after 60 seconds, and bind to one portal
+session and tenant. Logout, pause, stop, and expiry revoke streaming access within
+five seconds. Avatar/activity requests recheck portal authentication and expose only
+fixed read-only endpoints. Native service links acquire SSO and retain their requested
+relative channel/repository destination.
+
+Portal Pause preserves the VM and work. Portal Stop permanently deletes that tenant
+VM, including agents, messages, repositories and working files; account settings and
+provider keys are retained. Stop immediately blocks further inference through the
+broker. Play after Stop provisions a fresh VM and seed. The destructive Stop button
+explains this before executing. This differs from Mattermost's existing `/stop` work
+control, which does not delete the hosting instance.

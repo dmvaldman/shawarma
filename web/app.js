@@ -3,11 +3,31 @@ const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature
 async function api(route,data){const response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
 function error(e){$('error').textContent=e.message;$('error').hidden=false;}
 async function action(fn){if(busy)return;busy=true;$('error').hidden=true;try{await fn();await refresh();}catch(e){error(e);}finally{busy=false;}}
-async function refresh(){try{user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('logout').hidden=false;if(!user.activated)return;$('name').textContent=user.name+"’s swarm";$('status').textContent=user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(['queued','provisioning','pausing'].includes(user.status)));$('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';$('services').hidden=user.status!=='running';$('pause').hidden=user.status!=='running';$('start').textContent=user.status==='running'?'Extend session':user.status==='sleeping'?'Resume swarm':'Start swarm';$('start').disabled=['queued','provisioning','pausing'].includes(user.status)||!Object.values(user.providers).some(Boolean);$('machine-title').textContent=({new:'Ready when you are',queued:'Your swarm is queued',provisioning:'Preparing your swarm',running:'Your swarm is working',sleeping:'Your swarm is sleeping',pausing:'Saving your work',failed:'Your workspace needs attention'})[user.status]||user.status;$('machine-copy').textContent=(user.status==='running'?'Session ends '+new Date(user.run_until*1000).toLocaleString():user.status==='sleeping'?'Everything is preserved. Resume when you’re ready.':'Add a provider key, then start a session.');$('notice').hidden=!user.error;$('notice').textContent=user.error||'';renderProviders();}catch(e){if(e.status===401){user=null;$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('logout').hidden=true;}else error(e);}}
+function showScreen(){const settings=location.hash==='#settings'&&user?.activated;$('settings-screen').hidden=!settings;$('dashboard-screen').hidden=settings;}
+function openSettings(expand=false){location.hash='settings';showScreen();if(expand){$('inference-providers').open=true;$('inference-providers').scrollIntoView({block:'start'});}}
+window.addEventListener('hashchange',showScreen);
+$('settings-open').addEventListener('click',()=>openSettings());
+$('settings-back').addEventListener('click',()=>{location.hash='';showScreen();});
+$('set-provider').addEventListener('click',()=>openSettings(true));
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-analytics-height'){const height=Number(event.data.height);if(Number.isFinite(height))$('analytics-frame').style.height=Math.max(500,Math.min(height+8,20000))+'px';}});
+$('analytics-frame').addEventListener('load',()=>{$('analytics-loading').hidden=true;});
+async function refresh(){try{
+ user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
+ const running=user.status==='running',transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
+ $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
+ $('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
+ $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;
+ $('session-until').textContent=running?'Until '+new Date(user.run_until*1000).toLocaleString():'';$('provider-warning').hidden=hasProviders;
+ for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
+ $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
+ $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
+ const frame=$('analytics-frame');frame.hidden=!running;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
+ renderProviders();showScreen();
+ }catch(e){if(e.status===401){user=null;$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');document.querySelector('main').classList.remove('is-account');}else error(e);}}
 
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',deepseek:'DeepSeek'};
 function renderProviders(){
-  const paused=!['running','queued','provisioning','pausing'].includes(user.status);
+  const paused=!['running','queued','provisioning','pausing','stopping'].includes(user.status);
   const signature=JSON.stringify([user.provider_keys,user.providers,paused]);
   if(renderSignature===signature)return;renderSignature=signature;
   $('provider-list').replaceChildren();
@@ -34,11 +54,19 @@ $('add-provider').addEventListener('click',()=>{$('provider-form').hidden=false;
 $('cancel-provider').addEventListener('click',()=>{$('provider-form').hidden=true;$('provider-key').value='';});
 
 $('login-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('redeem',{code:$('invite-code').value.trim()});sessionStorage.removeItem('swarm-invite');$('invite-code').value='';renderSignature=null;});});
-$('logout').addEventListener('click',()=>action(async()=>{await api('logout',{});renderSignature=null;$('invite-result').replaceChildren();}));
+async function signOut(){await action(async()=>{await api('logout',{});renderSignature=null;$('provider-key').value='';$('provider-form').hidden=true;$('inference-providers').open=false;$('invite-result').replaceChildren();});}
+$('logout').addEventListener('click',signOut);
+$('activation-logout').addEventListener('click',signOut);
 $('provider-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('providers',{provider:$('provider').value,key:$('provider-key').value});$('provider-key').value='';$('provider-form').hidden=true;});});
 $('start').addEventListener('click',()=>action(()=>api('start',{hours:Number($('duration').value)})));
 $('pause').addEventListener('click',()=>action(()=>api('pause',{})));
-for(const button of document.querySelectorAll('[data-service]'))button.addEventListener('click',()=>{const tab=window.open('about:blank','_blank');action(async()=>{try{const data=await api('open',{service:button.dataset.service});const url=new URL(data.url);if(url.protocol!=='https:'||!url.hostname.endsWith('.agent37.app'))throw new Error('Invalid service URL.');if(tab){tab.opener=null;tab.location.href=url.href;}else location.href=url.href;}catch(e){tab?.close();throw e;}});});
+$('duration').addEventListener('change',()=>{if(user?.status==='running')action(()=>api('start',{hours:Number($('duration').value)}));});
+$('stop').addEventListener('click',()=>$('stop-confirm').showModal());
+$('stop-cancel').addEventListener('click',()=>$('stop-confirm').close());
+$('stop-confirmed').addEventListener('click',()=>{if(busy)return;$('stop-confirm').close();action(()=>api('stop',{}));});
+function openService(service,path=''){if(busy)return;const tab=window.open('about:blank','_blank');action(async()=>{try{const data=await api('open',{service,path});const url=new URL(data.url);if(url.protocol!=='https:'||!url.hostname.endsWith('.agent37.app'))throw new Error('Invalid service URL.');if(tab){tab.opener=null;tab.location.href=url.href;}else location.href=url.href;}catch(e){tab?.close();throw e;}});}
+for(const button of document.querySelectorAll('[data-service]'))button.addEventListener('click',()=>openService(button.dataset.service));
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-open-service'&&['mattermost','gitea'].includes(event.data.service)&&typeof event.data.path==='string')openService(event.data.service,event.data.path);});
 $('invite-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{const data=await api('invite',{name:$('friend-name').value});$('invite-result').replaceChildren();const input=document.createElement('input');input.readOnly=true;input.value=data.url;input.addEventListener('click',()=>input.select());const note=document.createElement('p');note.className='small';note.textContent='This link grants access to their workspace. Share it privately.';$('invite-result').append(input,note);});});
 const params=new URLSearchParams(location.hash.slice(1)),code=params.get('invite');
 if(code){sessionStorage.setItem('swarm-invite',code);history.replaceState(null,'',location.pathname);}

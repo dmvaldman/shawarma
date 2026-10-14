@@ -451,3 +451,125 @@ async def test_pending_identity_cannot_access_resources_until_invited(hosted):
     assert me["activated"] and me["role"] == "admin"
     await client.post("/api/logout", headers=headers, json={})
     assert (await client.get("/api/me", headers=headers)).status_code == 401
+
+
+async def test_portal_stop_discards_only_own_machine_and_play_starts_fresh(hosted, monkeypatch):
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    owner = (await client.get("/api/me", headers=headers)).json()
+    row = await hosting.store.user(owner["id"])
+    vault = hosting.store.unseal(row)
+    vault["providers"]["openai"] = "owners-key"
+    vault["database"] = {"postgres": "old-database"}
+    old_token = vault["agent_token"]
+    await hosting.store.save_vault(row["id"], vault)
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='old-node' WHERE id=?", (row["id"],)
+    )
+    await hosting.store.invite("Alice", code="alice-invite")
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='alice-node' WHERE name='Alice'"
+    )
+    assert (await client.post("/api/stop", json={}, headers=headers)).status_code == 200
+    assert (await client.get("/api/me", headers=headers)).json()["status"] == "stopping"
+    assert (
+        await client.post(
+            "/proxy/openai/v1/responses", headers={"Authorization": "Bearer " + old_token}, json={}
+        )
+    ).status_code == 403
+    assert (await client.post("/api/start", json={}, headers=headers)).status_code == 409
+    await hosting.run_job(await hosting.store.user(row["id"]))
+    hosting.cloud.request.assert_awaited_once_with("DELETE", "instances/old-node")
+    stopped = await hosting.store.user(row["id"])
+    assert stopped["instance"] is None and stopped["status"] == "stopped"
+    fresh = hosting.store.unseal(stopped)
+    assert fresh["providers"] == {"openai": "owners-key"}
+    assert "database" not in fresh and fresh["agent_token"] != old_token
+    assert (await hosting.store.sql("SELECT instance FROM users WHERE name='Alice'"))[0][
+        "instance"
+    ] == "alice-node"
+    hosting.cloud.request.reset_mock()
+    hosting.cloud.request.return_value = {"id": "fresh-node"}
+    monkeypatch.setattr(hosting, "install", AsyncMock())
+    assert (await client.post("/api/start", json={"hours": 2}, headers=headers)).status_code == 200
+    await hosting.run_job(await hosting.store.user(row["id"]))
+    assert (await hosting.store.user(row["id"]))["instance"] == "fresh-node"
+    assert hosting.cloud.request.call_args.args[:2] == ("POST", "instances")
+
+
+async def test_embedded_analytics_requires_access_and_preserves_dashboard_features(hosted):
+    hosting, client = hosted
+    assert (await client.get("/api/analytics?resource=page")).status_code == 401
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    assert (await client.get("/api/analytics?resource=page", headers=headers)).status_code == 409
+    owner = (await client.get("/api/me", headers=headers)).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='own-node' WHERE id=?", (owner["id"],)
+    )
+    page = await client.get("/api/analytics?resource=page", headers=headers)
+    assert page.status_code == 200
+    assert "nonce-" in page.headers["Content-Security-Policy"]
+    assert "frame-ancestors 'self'" in page.headers["Content-Security-Policy"]
+    assert "await portalSocketURL()" in page.text and "function analyticsURL(" in page.text
+    assert "fetch(analyticsURL('/api/agents/" in page.text
+    assert "image.src=analyticsURL(a.avatar_url)" in page.text
+    assert 'id="agent-detail"' in page.text
+    assert (
+        await client.get("/api/analytics?resource=credentials", headers=headers)
+    ).status_code == 400
+    assert (
+        await client.get("/api/analytics?resource=activity&agent=../etc", headers=headers)
+    ).status_code == 400
+    hosting.cloud.request.assert_not_called()
+
+
+async def test_analytics_websocket_ticket_is_single_use_and_revoked_on_logout(hosted, monkeypatch):
+    import asyncio
+    from urllib.parse import urlsplit
+
+    from aiohttp import ClientSession, WSServerHandshakeError
+
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    owner = (await client.get("/api/me", headers=headers)).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='own-node' WHERE id=?", (owner["id"],)
+    )
+    native = web.Application()
+
+    async def socket(request):
+        output = web.WebSocketResponse()
+        await output.prepare(request)
+        await output.send_json({"type": "snapshot", "data": {"owner": owner["id"]}})
+        async for _ in output:
+            pass
+        return output
+
+    native.router.add_get("/api/ws", socket)
+    runner = web.AppRunner(native)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    try:
+        async with ClientSession() as upstream, ClientSession() as browser:
+            connection = AsyncMock(return_value=(upstream, f"http://127.0.0.1:{port}"))
+            monkeypatch.setattr(hosting.analytics, "connection", connection)
+            ticket = (await client.post("/api/dashboard-connect", headers=headers, json={})).json()[
+                "url"
+            ]
+            url = str(client.base_url).rstrip("/") + "/portal/analytics?" + urlsplit(ticket).query
+            with pytest.raises(WSServerHandshakeError) as denied:
+                await browser.ws_connect(url, origin="https://evil.example")
+            assert denied.value.status == 403
+            async with browser.ws_connect(url, origin="https://swarm.forum") as ws:
+                assert (await ws.receive_json())["data"]["owner"] == owner["id"]
+                with pytest.raises(WSServerHandshakeError) as replay:
+                    await browser.ws_connect(url, origin="https://swarm.forum")
+                assert replay.value.status == 401
+                await client.post("/api/logout", json={}, headers=headers)
+                message = await asyncio.wait_for(ws.receive(), timeout=7)
+                assert message.type.name in {"CLOSE", "CLOSED"}
+            assert connection.await_args.args[0]["id"] == owner["id"]
+    finally:
+        await runner.cleanup()

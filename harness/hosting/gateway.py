@@ -18,6 +18,8 @@ from urllib.parse import urlsplit
 from aiohttp import ClientSession, ClientTimeout, DummyCookieJar, WSMsgType, web
 from dotenv import dotenv_values
 
+from harness.hosting.paths import service_path
+
 FRONT_PORTS = {"mattermost": 18065, "gitea": 13000, "opencode": 14096, "dashboard": 18066}
 BACK_PORTS = {"mattermost": 8065, "gitea": 3000, "opencode": 4096, "dashboard": 8066}
 COOKIE = "__Host-swarm_access"
@@ -90,7 +92,11 @@ class ServiceGateway:
         result = await self.broker(
             "exchange", {"service": service, "ticket": request.query.get("ticket", "")}
         )
-        location = "/"
+        destination = request.query.get("next", "")
+        try:
+            location = service_path(destination) if destination else "/"
+        except ValueError:
+            raise web.HTTPBadRequest(text="Invalid service path") from None
         response = web.HTTPFound(location)
         if service == "mattermost":
             async with self.client.post(
@@ -108,7 +114,7 @@ class ServiceGateway:
                     )
                 self.cookies(response, native.headers.getall("Set-Cookie", []))
             team = self.workspace.get("team_name", "")
-            if team:
+            if team and not destination:
                 response.headers["Location"] = "/" + team + "/channels/town-square"
         response.set_cookie(
             COOKIE,

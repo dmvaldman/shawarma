@@ -136,3 +136,20 @@ async def test_gateway_preserves_sse_and_websocket_messages(monkeypatch):
             await socket.send_str("hello")
             message = await socket.receive(timeout=2)
             assert message.type == WSMsgType.TEXT and message.data == "echo:hello"
+
+
+async def test_service_login_redirects_only_to_relative_native_destination(monkeypatch):
+    async with gateway("gitea", monkeypatch) as (browser, observed):
+        response = await browser.get(
+            "/__swarm/login?ticket=one-time-ticket&next=/swarm/research/pulls/3",
+            allow_redirects=False,
+        )
+        assert response.status == 302
+        assert response.headers["Location"] == "/swarm/research/pulls/3"
+        for value in ("//evil.example", "/\\evil.example", "/%0d%0aLocation:evil"):
+            response = await browser.get(
+                "/__swarm/login",
+                params={"ticket": "one-time-ticket", "next": value},
+                allow_redirects=False,
+            )
+            assert response.status == 400

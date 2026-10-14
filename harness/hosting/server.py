@@ -16,8 +16,10 @@ import httpx
 from aiohttp import web
 
 from harness.config import Settings
+from harness.hosting.analytics_bridge import AnalyticsBridge
 from harness.hosting.cloud import Cloud, HostingError
 from harness.hosting.google import GoogleLogin
+from harness.hosting.paths import service_path
 from harness.hosting.store import HostingStore, digest
 from harness.models.catalog import ModelCatalog
 
@@ -48,6 +50,7 @@ class Hosting:
         self.owner_code = owner_code
         self.avatar_key = avatar_key
         self.google = GoogleLogin(store, google_client_id, google_client_secret)
+        self.analytics = AnalyticsBridge(store, cloud, public_url)
         self.catalogs: dict[str, tuple[str, ModelCatalog]] = {}
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
@@ -158,6 +161,10 @@ class Hosting:
             return web.json_response({"ok": True})
         if not user["activated"]:
             raise web.HTTPForbidden(text="Enter an invite code to unlock your swarm.")
+        if request.method == "GET" and route == "analytics":
+            return await self.analytics.resource(request, user)
+        if request.method == "POST" and route == "dashboard-connect":
+            return await self.analytics.ticket(request, user)
         if request.method == "GET" and route == "models":
             catalog = await self.models(user, vault)
             return web.json_response(
@@ -202,7 +209,7 @@ class Hosting:
             await self.store.save_vault(user["id"], vault)
             self.catalogs.pop(user["id"], None)
             return web.json_response({"ok": True})
-        if request.method == "POST" and route in {"start", "pause"}:
+        if request.method == "POST" and route in {"start", "pause", "stop"}:
             if user["action"]:
                 raise web.HTTPConflict(text="Your previous machine operation is still in progress.")
             if route == "start":
@@ -223,6 +230,11 @@ class Hosting:
                         " WHERE id=?",
                         (deadline, user["id"]),
                     )
+            elif route == "stop":
+                await self.store.sql(
+                    "UPDATE users SET action='stop',status='stopping',run_until=NULL WHERE id=?",
+                    (user["id"],),
+                )
             else:
                 await self.store.sql(
                     "UPDATE users SET action='pause',status='pausing',run_until=NULL WHERE id=?",
@@ -239,6 +251,12 @@ class Hosting:
                 f"instances/{user['instance']}/signed-url",
                 {"port": PORTS[service], "ttl_seconds": 3600},
             )
+            destination = str(body.get("path", ""))
+            if destination:
+                try:
+                    destination = service_path(destination)
+                except ValueError:
+                    raise web.HTTPBadRequest(text="Invalid service path") from None
             url = data["url"]
             if urlsplit(url).hostname != f"{user['instance']}-{PORTS[service]}.agent37.app":
                 raise HostingError("Unexpected service access URL")
@@ -256,6 +274,8 @@ class Hosting:
             )
             parts = urlsplit(url)
             query = parse_qsl(parts.query) + [("ticket", ticket)]
+            if destination:
+                query.append(("next", destination))
             return web.json_response(
                 {"url": urlunsplit(parts._replace(path="/__swarm/login", query=urlencode(query)))}
             )
@@ -358,6 +378,8 @@ class Hosting:
         )
         if not supplied or not rows:
             raise web.HTTPUnauthorized()
+        if rows[0]["status"] in {"stopping", "stopped"}:
+            raise web.HTTPForbidden(text="This swarm has been stopped.")
         key = (
             self.avatar_key if sponsored else self.store.unseal(rows[0])["providers"].get(provider)
         )
@@ -510,6 +532,25 @@ class Hosting:
 
     async def run_job(self, user: dict[str, Any]) -> None:
         try:
+            if user["action"] == "stop":
+                if user["instance"]:
+                    try:
+                        await self.cloud.request("DELETE", f"instances/{user['instance']}")
+                    except HostingError as error:
+                        if error.status != 404:
+                            raise
+                vault = self.store.unseal(user)
+                vault.pop("database", None)
+                vault["agent_token"] = secrets.token_urlsafe(32)
+                vault["mattermost_password"] = secrets.token_urlsafe(32)
+                await self.store.sql(
+                    "UPDATE users SET instance=NULL,creating=0,status='stopped',action=NULL,"
+                    "stage='',error=NULL,run_until=NULL,vault=?,agent_token_hash=? WHERE id=?",
+                    (self.store.seal(vault), digest(vault["agent_token"]), user["id"]),
+                )
+                await self.store.sql("DELETE FROM service_tickets WHERE user_id=?", (user["id"],))
+                await self.store.sql("DELETE FROM service_sessions WHERE user_id=?", (user["id"],))
+                return
             if user["action"] == "pause":
                 if user["instance"]:
                     await self.store.sql(
@@ -620,6 +661,7 @@ class Hosting:
 
     async def cleanup(self, app: web.Application) -> None:
         self.stopping = True
+        await self.analytics.close()
         tasks = list(self.operations.values())
         if self.runner:
             tasks.append(self.runner)
@@ -652,6 +694,7 @@ class Hosting:
         app.router.add_route("*", "/proxy/{provider}/v1/{path:.*}", self.proxy)
         app.router.add_post("/gateway/{operation}", self.gateway)
         app.router.add_get("/health", self.health)
+        app.router.add_get("/portal/analytics", self.analytics.socket)
         app.on_startup.append(self.startup)
         app.on_cleanup.append(self.cleanup)
         return app
