@@ -20,7 +20,7 @@ async function refresh(){try{
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
  $('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
  $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;
- $('session-until').textContent=running?'Until '+new Date(user.run_until*1000).toLocaleString():'';$('provider-warning').hidden=hasProviders;
+ $('session-until').hidden=!running;$('session-until').textContent=running?'(Until '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(user.run_until*1000)).replace(':','.')+')':'';$('provider-warning').hidden=hasProviders;
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
  $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
