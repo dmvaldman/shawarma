@@ -3,11 +3,13 @@ const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature
 async function api(route,data){const response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
 function error(e){$('error').textContent=e.message;$('error').hidden=false;}
 async function action(fn){if(busy)return;busy=true;$('error').hidden=true;try{await fn();await refresh();}catch(e){error(e);}finally{busy=false;}}
-function showScreen(){const settings=location.hash==='#settings'&&user?.activated;$('settings-screen').hidden=!settings;$('dashboard-screen').hidden=settings;}
+function showScreen(){const settings=location.hash==='#settings'&&user?.activated;$('settings-screen').hidden=!settings;$('dashboard-screen').hidden=settings;$('settings-open').hidden=!user?.activated||settings;}
 function openSettings(expand=false){location.hash='settings';showScreen();if(expand){$('inference-providers').open=true;$('inference-providers').scrollIntoView({block:'start'});}}
 window.addEventListener('hashchange',showScreen);
 $('settings-open').addEventListener('click',()=>openSettings());
-$('settings-back').addEventListener('click',()=>{location.hash='';showScreen();});
+function closeSettings(){location.hash='';showScreen();}
+$('settings-back').addEventListener('click',closeSettings);
+document.addEventListener('click',event=>{if(!$('settings-screen').hidden&&!event.target.closest('.panel,.settings-heading,button,a,dialog'))closeSettings();});
 $('set-provider').addEventListener('click',()=>openSettings(true));
 window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-analytics-height'){const height=Number(event.data.height);if(Number.isFinite(height))$('analytics-frame').style.height=Math.max(500,Math.min(height+8,20000))+'px';}});
 $('analytics-frame').addEventListener('load',()=>{$('analytics-loading').hidden=true;});
