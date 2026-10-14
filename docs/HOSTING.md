@@ -29,8 +29,8 @@ when keys change. Add/delete operations require a paused workspace.
 
 At startup the seed uses an available model from the connected providers, preferring
 gpt-6-luna, Claude Haiku 5.5 or DeepSeek Flash, then a known lightweight model.
-Only the seed is reassigned when provider settings change; existing workers retain
-their explicit models. OpenAI-backed web search is exposed only when the user has
+Existing agents retain their immutable model assignments when keys change; keep
+the corresponding provider connected for agents you want to continue using. OpenAI-backed web search is exposed only when the user has
 an OpenAI key; web retrieval remains available to all agents.
 
 Avatar generation is paid by the host via HOSTING_AVATAR_OPENAI_KEY. Tenant machines
