@@ -26,8 +26,15 @@ export default async function handler(req,res){
     const response=await fetch(process.env.CONTROL_PLANE_URL+'/api/'+route+(query.size?'?'+query:''),{method:req.method,headers,body:req.method==='POST'?JSON.stringify(req.body||{}):undefined,signal:AbortSignal.timeout(55000)});
     if(response.ok&&route==='analytics'){
       res.setHeader('Content-Type',response.headers.get('Content-Type'));
-      const policy=response.headers.get('Content-Security-Policy');if(policy)res.setHeader('Content-Security-Policy',policy);
-      return res.status(200).send(Buffer.from(await response.arrayBuffer()));
+      const content=Buffer.from(await response.arrayBuffer());
+      if(response.headers.get('Content-Type')?.startsWith('text/html')){
+        const nonce=content.toString('utf8').match(/<script nonce="([A-Za-z0-9_-]{24,80})">/)?.[1];
+        if(!nonce)return res.status(502).json({error:'Analytics is temporarily unavailable.'});
+        const control=new URL(process.env.CONTROL_PLANE_URL);
+        const socketOrigin='wss://'+control.host;
+        res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'nonce-"+nonce+"'; style-src 'self' 'unsafe-inline'; connect-src 'self' "+socketOrigin+"; img-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'");
+      }
+      return res.status(200).send(content);
     }
     const data=await response.json();
     if(response.ok&&route==='login'){
