@@ -10,3 +10,5 @@
 @keyframes status-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.pill[aria-busy="true"]::before{animation:none}}
 @media(max-width:650px){.section-heading{flex-wrap:wrap;gap:6px}.pill[data-state="queued"],.pill[data-state="provisioning"],.pill[data-state="pausing"]{font-size:18px}}
+
+.google-button{background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:4px;font-weight:500;margin-top:12px}#google-login{display:block}

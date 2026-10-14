@@ -2,10 +2,13 @@ services:
   gitea:
     environment:
       GITEA__server__ROOT_URL: ${HOSTED_GITEA_URL:?Set hosted Gitea URL}/
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      GITEA__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "true"
+      GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES: ${HOSTED_GITEA_TRUSTED_PROXY:?Set trusted host bridge address}/32
     ports: !override
-      - "0.0.0.0:3000:3000"
+      - "127.0.0.1:3000:3000"
   worker:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports: !override
-      - "0.0.0.0:4096:4096"
+      - "127.0.0.1:4096:4096"

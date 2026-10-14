@@ -10,13 +10,14 @@ import secrets
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from aiohttp import web
 
 from harness.config import Settings
 from harness.hosting.cloud import Cloud, HostingError
+from harness.hosting.google import GoogleLogin
 from harness.hosting.store import HostingStore, digest
 from harness.models.catalog import ModelCatalog
 
@@ -25,7 +26,7 @@ PROVIDERS = {
     "anthropic": "https://api.anthropic.com/v1",
     "deepseek": "https://api.deepseek.com",
 }
-PORTS = {"mattermost": 8065, "gitea": 3000, "dashboard": 8066, "opencode": 4096}
+PORTS = {"mattermost": 18065, "gitea": 13000, "dashboard": 18066, "opencode": 14096}
 logger = logging.getLogger(__name__)
 
 
@@ -39,11 +40,14 @@ class Hosting:
         source_ref: str,
         owner_code: str,
         avatar_key: str = "",
+        google_client_id: str = "",
+        google_client_secret: str = "",
     ):
         self.store, self.cloud = store, cloud
         self.service_key, self.public_url, self.source_ref = service_key, public_url, source_ref
         self.owner_code = owner_code
         self.avatar_key = avatar_key
+        self.google = GoogleLogin(store, google_client_id, google_client_secret)
         self.catalogs: dict[str, tuple[str, ModelCatalog]] = {}
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
@@ -87,6 +91,14 @@ class Hosting:
         ):
             raise web.HTTPUnauthorized()
         route = request.match_info["route"]
+        if request.method == "GET" and route == "auth-config":
+            return web.json_response({"google": self.google.enabled})
+        if request.method == "POST" and route == "google-start":
+            return web.json_response(
+                await self.google.start(request.headers.get("X-Swarm-Session", ""))
+            )
+        if request.method == "POST" and route == "google-complete":
+            return web.json_response({"session": await self.google.complete(await request.json())})
         if request.method == "POST" and route == "login":
             client_ip = request.headers.get("X-Swarm-Client", request.remote or "unknown")
             now = time.time()
@@ -119,6 +131,7 @@ class Hosting:
                     "id": user["id"],
                     "name": user["name"],
                     "role": user["role"],
+                    "google_connected": bool(user["google_subject"]),
                     "status": user["status"],
                     "stage": user["stage"],
                     "error": user["error"],
@@ -214,7 +227,23 @@ class Hosting:
             url = data["url"]
             if urlsplit(url).hostname != f"{user['instance']}-{PORTS[service]}.agent37.app":
                 raise HostingError("Unexpected service access URL")
-            return web.json_response({"url": url})
+            ticket = secrets.token_urlsafe(32)
+            await self.store.sql("DELETE FROM service_tickets WHERE expires<?", (int(time.time()),))
+            await self.store.sql(
+                "INSERT INTO service_tickets VALUES(?,?,?,?,?)",
+                (
+                    digest(ticket),
+                    user["id"],
+                    digest(request.headers["X-Swarm-Session"]),
+                    service,
+                    int(time.time()) + 60,
+                ),
+            )
+            parts = urlsplit(url)
+            query = parse_qsl(parts.query) + [("ticket", ticket)]
+            return web.json_response(
+                {"url": urlunsplit(parts._replace(path="/__swarm/login", query=urlencode(query)))}
+            )
         if request.method == "POST" and route == "credentials":
             if not user["instance"] or user["status"] != "running":
                 raise web.HTTPConflict(text="Start your swarm before viewing credentials.")
@@ -234,6 +263,55 @@ class Hosting:
             if provider == "anthropic"
             else {"Authorization": "Bearer " + key}
         )
+
+    async def gateway(self, request: web.Request) -> web.Response:
+        supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        users = await self.store.sql(
+            "SELECT * FROM users WHERE agent_token_hash=? AND status='running'", (digest(supplied),)
+        )
+        if not supplied or not users:
+            raise web.HTTPUnauthorized()
+        user = users[0]
+        body = await request.json()
+        service, now = body.get("service"), int(time.time())
+        if service not in PORTS:
+            raise web.HTTPBadRequest()
+        if request.match_info["operation"] == "exchange":
+            tickets = await self.store.sql(
+                "DELETE FROM service_tickets WHERE token_hash=? AND user_id=? AND service=? "
+                "AND expires>? AND session_hash IN "
+                "(SELECT token_hash FROM sessions WHERE expires>?) "
+                "RETURNING session_hash",
+                (digest(str(body.get("ticket", ""))), user["id"], service, now, now),
+            )
+            if not tickets:
+                raise web.HTTPUnauthorized(
+                    text="Service sign-in expired. Open it from the portal again."
+                )
+            cookie = secrets.token_urlsafe(32)
+            await self.store.sql(
+                "INSERT INTO service_sessions VALUES(?,?,?,?,?)",
+                (
+                    digest(cookie),
+                    user["id"],
+                    tickets[0]["session_hash"],
+                    service,
+                    now + 3600,
+                ),
+            )
+            return web.json_response({"token": cookie})
+        if request.match_info["operation"] == "check":
+            rows = await self.store.sql(
+                "SELECT ss.token_hash FROM service_sessions ss "
+                "JOIN sessions s ON s.token_hash=ss.session_hash "
+                "WHERE ss.token_hash=? AND ss.user_id=? AND ss.service=? "
+                "AND ss.expires>? AND s.expires>?",
+                (digest(str(body.get("token", ""))), user["id"], service, now, now),
+            )
+            if not rows:
+                raise web.HTTPUnauthorized()
+            return web.json_response({"ok": True})
+        raise web.HTTPNotFound()
 
     async def proxy(self, request: web.Request) -> web.StreamResponse:
         provider, path = request.match_info["provider"], request.match_info["path"]
@@ -356,7 +434,7 @@ class Hosting:
             "POSTGRES_PASSWORD": creds["postgres"],
             "HARNESS_DB_PASSWORD": creds["harness"],
             "HARNESS_DATABASE_URL": f"postgresql+asyncpg://harness:{creds['harness']}@localhost:5432/harness",
-            "MATTERMOST_SITE_URL": prefix + "8065.agent37.app",
+            "MATTERMOST_SITE_URL": prefix + str(PORTS["mattermost"]) + ".agent37.app",
             "HARNESS_MATTERMOST_URL": "http://localhost:8065",
             "HARNESS_MATTERMOST_SERVER_ID": user["id"],
             "HARNESS_WORKSPACE_NAME": user["name"] + "'s Swarm",
@@ -383,14 +461,16 @@ class Hosting:
             ),
             "HARNESS_AVATAR_BASE_URL": self.public_url + "/proxy/avatar/v1",
             "HARNESS_AVATAR_API_KEY": token,
+            "HOSTED_GATEWAY_KEY": token,
+            "HOSTED_GATEWAY_BROKER_URL": self.public_url,
             "OPENAI_API_KEY": token if vault["providers"].get("openai") else "",
             "ANTHROPIC_API_KEY": token if vault["providers"].get("anthropic") else "",
             "DEEPSEEK_API_KEY": token if vault["providers"].get("deepseek") else "",
             "HOSTED_OWNER_PASSWORD": vault["mattermost_password"],
-            "HOSTED_MATTERMOST_URL": prefix + "8065.agent37.app",
-            "HOSTED_GITEA_URL": prefix + "3000.agent37.app",
-            "HOSTED_OPENCODE_URL": prefix + "4096.agent37.app",
-            "HOSTED_ANALYTICS_URL": prefix + "8066.agent37.app",
+            "HOSTED_MATTERMOST_URL": prefix + str(PORTS["mattermost"]) + ".agent37.app",
+            "HOSTED_GITEA_URL": prefix + str(PORTS["gitea"]) + ".agent37.app",
+            "HOSTED_OPENCODE_URL": prefix + str(PORTS["opencode"]) + ".agent37.app",
+            "HOSTED_ANALYTICS_URL": prefix + str(PORTS["dashboard"]) + ".agent37.app",
         }
         await self.cloud.install(node, env, self.source_ref)
 
@@ -423,7 +503,7 @@ class Hosting:
                     with contextlib.suppress(HostingError):
                         await self.cloud.command(
                             user["instance"],
-                            "docker stop --time 60 swarm-controller; "
+                            "docker stop --time 60 swarm-service-gateway swarm-controller; "
                             "cd /root/swarm/app; "
                             "docker compose --env-file .env "
                             "--env-file .state/coding.env "
@@ -555,6 +635,7 @@ class Hosting:
         app = web.Application(middlewares=[errors], client_max_size=32 * 1024 * 1024)
         app.router.add_route("*", "/api/{route}", self.api)
         app.router.add_route("*", "/proxy/{provider}/v1/{path:.*}", self.proxy)
+        app.router.add_post("/gateway/{operation}", self.gateway)
         app.router.add_get("/health", self.health)
         app.on_startup.append(self.startup)
         app.on_cleanup.append(self.cleanup)
@@ -571,6 +652,8 @@ def main() -> None:
         os.environ["HOSTING_SOURCE_REF"],
         os.environ["HOSTING_OWNER_CODE"],
         os.environ.get("HOSTING_AVATAR_OPENAI_KEY", ""),
+        os.environ.get("HOSTING_GOOGLE_CLIENT_ID", ""),
+        os.environ.get("HOSTING_GOOGLE_CLIENT_SECRET", ""),
     ).app()
     web.run_app(app, host="0.0.0.0", port=8780, access_log=None)
 

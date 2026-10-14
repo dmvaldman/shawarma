@@ -57,16 +57,31 @@ of the tenant's own UI/controller responsiveness.
 The native services currently use private Agent37 preview URLs reached through
 short-lived signed links. The global Agent37 API key never reaches the browser.
 The portal is branded at swarm.forum; native service hostnames are not yet branded.
-Mattermost, Gitea and OpenCode retain native account authentication; the portal can
-reveal only the signed-in user's generated service credentials. Analytics relies
-on edge authentication and permits its explicitly configured public origin.
+A tenant gateway listens on ports 18065 (Mattermost), 13000 (Gitea), 14096
+(OpenCode) and 18066 (analytics). Native backends stay on loopback. Portal service
+links include a single-use, 60-second handoff bound to the user, portal session and
+specific service. The gateway exchanges it for a Secure/HttpOnly host-only cookie,
+then removes the ticket from the URL. Logout revokes handoffs and service sessions;
+HTTP sessions and open sockets recheck the portal session within five seconds.
+
+Mattermost uses its normal login API and native browser cookies, with the desktop
+landing page disabled. Gitea trusts only the host bridge address for proxy identity;
+the gateway strips caller-supplied identity headers and inserts the owner account.
+OpenCode receives its existing Basic credentials from the gateway. Unsafe browser
+requests require the exact service Origin. Uploads, SSE and WebSockets stream
+through the gateway. Service passwords are never placed in URLs.
+
+Google sign-in uses authorization code + PKCE, state, browser-binding and nonce,
+with verified RS256 issuer/audience/expiry and stable Google subject IDs. New
+Google identities cannot create accounts: first open an invite link and choose
+Connect Google in the portal. Invites remain usable. See GOOGLE_SIGN_IN.md.
 
 Keep ports private; do not add public tenant service ports. The only public port is
 the hosting broker/control-plane listener, which checks either a server-side service
 credential plus a user session, or an owner-scoped inference capability.
 
 Archive-to-object-storage, restoration from off-machine backup, paid billing,
-commercial ChatGPT sign-in, custom service domains and seamless native SSO are
+commercial ChatGPT sign-in and custom service domains are
 follow-on work. The beta intentionally does not claim these features are available.
 
 ## Operator configuration
@@ -81,6 +96,7 @@ Run `python -m harness.hosting.server` with:
 - HOSTING_SOURCE_REF: deployed full Git commit SHA.
 - AGENT37_API_KEY: platform cloud credential.
 - HOSTING_AVATAR_OPENAI_KEY: host-funded avatar generation only.
+- HOSTING_GOOGLE_CLIENT_ID / HOSTING_GOOGLE_CLIENT_SECRET: optional Google OAuth web client.
 
 Vercel needs only CONTROL_PLANE_URL and CONTROL_PLANE_KEY. No user's provider key
 or global cloud key belongs in its public environment variables.

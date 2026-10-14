@@ -33,7 +33,25 @@ class HostingStore:
                     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
                     expires INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS service_tickets (
+                    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    session_hash TEXT NOT NULL, service TEXT NOT NULL, expires INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS service_sessions (
+                    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                    session_hash TEXT NOT NULL, service TEXT NOT NULL, expires INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS oauth_flows (
+                    state_hash TEXT PRIMARY KEY, browser_hash TEXT NOT NULL,
+                    vault TEXT NOT NULL, expires INTEGER NOT NULL
+                );
             """)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+            if "google_subject" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN google_subject TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS google_subject ON users(google_subject)"
+            )
         path.chmod(0o600)
 
     def seal(self, data: dict[str, Any]) -> str:

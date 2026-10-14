@@ -18,7 +18,7 @@ async def bootstrap() -> None:
         addresses = await asyncio.to_thread(subprocess.check_output, ["hostname", "-I"], text=True)
         update_env(
             {
-                "HARNESS_ANALYTICS_BIND_HOST": "0.0.0.0",
+                "HARNESS_ANALYTICS_BIND_HOST": "127.0.0.1",
                 "HARNESS_ANALYTICS_PROXY_HOSTS": json.dumps(addresses.split()),
                 "HARNESS_MATTERMOST_PUBLIC_URL": str(env["HOSTED_MATTERMOST_URL"]),
                 "HARNESS_GITEA_PUBLIC_URL": str(env["HOSTED_GITEA_URL"]),

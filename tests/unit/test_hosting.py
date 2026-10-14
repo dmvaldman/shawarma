@@ -62,7 +62,7 @@ async def test_invites_sessions_and_service_access_are_scoped(hosted):
         "UPDATE users SET instance='alice-node',status='running' WHERE id=?", (alice["id"],)
     )
     hosting.cloud.request.return_value = {
-        "url": "https://alice-node-8066.agent37.app/?a37_token=short"
+        "url": "https://alice-node-18066.agent37.app/?a37_token=short"
     }
     result = await client.post(
         "/api/open", json={"service": "dashboard", "user_id": owner["id"]}, headers=alice_headers
@@ -375,4 +375,57 @@ async def test_host_avatar_key_only_authorizes_fixed_image_requests(hosted, monk
     assert "private-host-image-key" not in response.text
     assert (
         await client.post("/proxy/openai/v1/responses", headers=headers, json={})
+    ).status_code == 401
+
+
+async def test_service_tickets_are_single_use_bound_and_revoked_on_logout(hosted):
+    from urllib.parse import parse_qs, urlsplit
+
+    hosting, client = hosted
+    token = await login(client, "owner-code")
+    headers = {"X-Swarm-Session": token}
+    me = (await client.get("/api/me", headers=headers)).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='owner-node' WHERE id=?", (me["id"],)
+    )
+    hosting.cloud.request.return_value = {
+        "url": "https://owner-node-18065.agent37.app/?a37_token=edge"
+    }
+    opened = (
+        await client.post("/api/open", headers=headers, json={"service": "mattermost"})
+    ).json()["url"]
+    assert urlsplit(opened).path == "/__swarm/login"
+    ticket = parse_qs(urlsplit(opened).query)["ticket"][0]
+    vault = hosting.store.unseal(await hosting.store.user(me["id"]))
+    gateway_headers = {"Authorization": "Bearer " + vault["agent_token"]}
+    wrong = await client.post(
+        "/gateway/exchange", headers=gateway_headers, json={"service": "gitea", "ticket": ticket}
+    )
+    assert wrong.status_code == 401
+    exchange = await client.post(
+        "/gateway/exchange",
+        headers=gateway_headers,
+        json={"service": "mattermost", "ticket": ticket},
+    )
+    assert exchange.status_code == 200
+    cookie = exchange.json()["token"]
+    assert (
+        await client.post(
+            "/gateway/exchange",
+            headers=gateway_headers,
+            json={"service": "mattermost", "ticket": ticket},
+        )
+    ).status_code == 401
+    check = {"service": "mattermost", "token": cookie}
+    assert (
+        await client.post("/gateway/check", headers=gateway_headers, json=check)
+    ).status_code == 200
+    assert (
+        await client.post(
+            "/gateway/check", headers=gateway_headers, json={**check, "service": "gitea"}
+        )
+    ).status_code == 401
+    await client.post("/api/logout", headers=headers, json={})
+    assert (
+        await client.post("/gateway/check", headers=gateway_headers, json=check)
     ).status_code == 401
