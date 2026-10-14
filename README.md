@@ -99,6 +99,7 @@ have additional opt-in gates documented in their test modules. Review those
 before enabling them.
 
 - [Architecture](docs/ARCHITECTURE.md): canonical design and owner-directed extensions.
+- [Hosted beta](docs/HOSTING.md): invitation-based hosting and per-user machines.
 - [Coding services](docs/CODING.md): local/cloud provisioning and collaboration tools.
 - [Decisions](docs/DECISIONS.md): implementation decisions and historical context.
 - [Verification](docs/VERIFICATION.md): milestone checks and historical results.

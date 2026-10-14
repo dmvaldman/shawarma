@@ -407,7 +407,8 @@ class CoreTools:
             "name": channel["name"],
             "display_name": channel["display_name"],
             "mention": "~" + channel["name"],
-            "url": f"{self.bot.base_url}/{team_name}/channels/{channel['name']}",
+            "url": (self.settings.mattermost_public_url or self.bot.base_url)
+            + f"/{team_name}/channels/{channel['name']}",
         }
 
     def observe_posts(self, posts: list[Any]) -> None:
@@ -772,7 +773,8 @@ class CoreTools:
                             "repository": await self.store.pool.fetchval(
                                 "SELECT repository_name FROM channel_repositories "
                                 "WHERE workspace_id=$1 AND channel_id=$2",
-                                state["workspace_id"], c["id"],
+                                state["workspace_id"],
+                                c["id"],
                             ),
                             "subscription": await self.store.pool.fetchval(
                                 "SELECT mode FROM subscriptions "

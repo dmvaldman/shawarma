@@ -12,6 +12,7 @@ dependencies = [
     "jsonschema>=4.23,<5",
     "aiohttp>=3.12,<4",
     "pypdf>=6,<7",
+    "cryptography>=46,<50",
 ]
 
 [project.scripts]

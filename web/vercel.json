@@ -1,0 +1,10 @@
+{
+  "framework": null,
+  "headers": [{"source":"/(.*)","headers":[
+    {"key":"Referrer-Policy","value":"no-referrer"},
+    {"key":"X-Content-Type-Options","value":"nosniff"},
+    {"key":"Content-Security-Policy","value":"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}
+  ]}],
+  "functions": {"api/[route].js":{"maxDuration":60}},
+  "rewrites": [{"source":"/s/:id","destination":"/index.html"}]
+}

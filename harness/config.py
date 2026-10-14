@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     )
 
     mattermost_url: HttpUrl
+    mattermost_public_url: str = ""
+    gitea_public_url: str = ""
+    opencode_public_url: str = ""
+    analytics_public_url: str = ""
     mattermost_server_id: str = "local-server"
     mattermost_admin_token: SecretStr = SecretStr("")
     mattermost_owner_id: str = ""

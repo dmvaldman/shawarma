@@ -236,7 +236,7 @@ async def ledger_snapshot(
 
 def service_links(data: dict[str, Any], settings: Settings) -> None:
     """OpenCode routes encode the checkout directory as unpadded URL-safe base64."""
-    root = str(settings.opencode_url).rstrip("/")
+    root = (settings.opencode_public_url or str(settings.opencode_url)).rstrip("/")
     for agent in data["agents"]:
         directory = agent.pop("opencode_directory", None)
         session = agent.pop("opencode_session_id", None)
@@ -252,8 +252,8 @@ def service_links(data: dict[str, Any], settings: Settings) -> None:
         (a for a in data["agents"] if a["state"] != "TERMINATED" and a["opencode_url"]), None
     )
     data["services"] = {
-        "mattermost": str(settings.mattermost_url),
-        "gitea": str(settings.gitea_url).rstrip("/")
+        "mattermost": settings.mattermost_public_url or str(settings.mattermost_url),
+        "gitea": (settings.gitea_public_url or str(settings.gitea_url)).rstrip("/")
         + "/"
         + settings.gitea_owner
         + "/"
@@ -305,7 +305,8 @@ class Analytics:
                                 {
                                     "id": c["id"],
                                     "name": c["name"],
-                                    "url": f"{admin.base_url}/{team['name']}/channels/{c['name']}",
+                                    "url": (self.settings.mattermost_public_url or admin.base_url)
+                                    + f"/{team['name']}/channels/{c['name']}",
                                 }
                                 for c in channels
                                 if not c.get("delete_at")
@@ -423,8 +424,12 @@ class Analytics:
         async def local_only(request: web.Request, handler: Any) -> web.StreamResponse:
             host = urlsplit("http://" + request.host).hostname
             origin = request.headers.get("Origin")
-            if host not in {"localhost", "127.0.0.1", "::1"} or (
-                origin and origin != f"{request.scheme}://{request.host}"
+            public = self.settings.analytics_public_url.rstrip("/")
+            allowed_hosts = {"localhost", "127.0.0.1", "::1"}
+            if public:
+                allowed_hosts.add(urlsplit(public).hostname or "")
+            if host not in allowed_hosts or (
+                origin and origin not in {f"{request.scheme}://{request.host}", public}
             ):
                 raise web.HTTPForbidden()
             response: web.StreamResponse = await handler(request)

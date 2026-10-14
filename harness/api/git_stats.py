@@ -44,7 +44,9 @@ class GitStats:
                 await child.enrich(group)
                 reports.append(group["gitea"])
             data["gitea"] = {
-                "repository_url": str(self.settings.gitea_url).rstrip("/")
+                "repository_url": (
+                    self.settings.gitea_public_url or str(self.settings.gitea_url)
+                ).rstrip("/")
                 + "/"
                 + self.settings.gitea_owner,
                 "updated_at": min(
@@ -55,7 +57,7 @@ class GitStats:
             return
         key = (data["workspace"]["since"], *(a["id"] for a in agents))
         repo = (
-            str(self.settings.gitea_url).rstrip("/")
+            (self.settings.gitea_public_url or str(self.settings.gitea_url)).rstrip("/")
             + "/"
             + self.settings.gitea_owner
             + "/"

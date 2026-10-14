@@ -1,0 +1,11 @@
+services:
+  gitea:
+    environment:
+      GITEA__server__ROOT_URL: ${HOSTED_GITEA_URL:?Set hosted Gitea URL}/
+    ports: !override
+      - "0.0.0.0:3000:3000"
+  worker:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !override
+      - "0.0.0.0:4096:4096"
