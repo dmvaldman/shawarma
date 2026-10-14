@@ -1,0 +1,45 @@
+name: swarm-coding
+services:
+  gitea:
+    image: docker.gitea.com/gitea:28.1.0
+    environment:
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "true"
+      GITEA__server__ROOT_URL: ${GITEA_ROOT_URL:-http://localhost:3000/}
+      GITEA__server__DISABLE_SSH: "true"
+    ports:
+      - "${CODING_BIND_HOST:-127.0.0.1}:3000:3000"
+    volumes:
+      - gitea-data:/data
+    restart: unless-stopped
+  worker:
+    container_name: swarm-coding-worker
+    build: .
+    init: true
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${HARNESS_OPENCODE_PASSWORD:?Set the worker password}
+      OPENCODE_CONFIG_CONTENT: ${SWARM_OPENCODE_CONFIG:?Set the explicit provider configuration}
+      SWARM_TOOL_URL: ${SWARM_TOOL_URL:-http://host.docker.internal:8767}
+      SWARM_TOOL_KEY: ${SWARM_TOOL_KEY:-}
+      SWARM_TOOL_DEFINITIONS: ${SWARM_TOOL_DEFINITIONS:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      SWARM_GITEA_URL: ${HARNESS_GITEA_WORKER_URL:-http://gitea:3000}
+      SWARM_GITEA_OWNER: ${HARNESS_GITEA_OWNER:-swarm}
+      SWARM_GITEA_REPO: ${HARNESS_GITEA_REPO:-workspace}
+    ports:
+      - "${CODING_BIND_HOST:-127.0.0.1}:4096:4096"
+    volumes:
+      - coding-workspaces:/workspaces
+      - coding-sessions:/home/node/.local/share/opencode
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 512
+    restart: unless-stopped
+volumes:
+  gitea-data:
+  coding-workspaces:
+  coding-sessions:
