@@ -41,6 +41,7 @@ class Hosting:
         self.owner_code = owner_code
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
+        self.operations: dict[str, asyncio.Task[None]] = {}
         self.login_attempts: dict[str, list[float]] = {}
 
     async def user(self, request: web.Request) -> dict[str, Any]:
@@ -307,129 +308,116 @@ class Hosting:
                     "SELECT * FROM users WHERE action IS NOT NULL ORDER BY created_at"
                 )
                 for user in rows:
-                    try:
-                        if user["action"] == "pause":
-                            if user["instance"]:
-                                await self.store.sql(
-                                    "UPDATE users SET stage='Saving work' WHERE id=?", (user["id"],)
-                                )
-                                with contextlib.suppress(HostingError):
-                                    await self.cloud.command(
-                                        user["instance"],
-                                        "docker stop --time 60 swarm-controller; "
-                                        "cd /root/swarm/app; "
-                                        "docker compose --env-file .env "
-                                        "--env-file .state/coding.env "
-                                        "-f infra/coding/compose.yaml stop; "
-                                        "docker compose --env-file .env "
-                                        "-f infra/compose.yaml stop; sync",
-                                    )
-                                await self.cloud.request(
-                                    "POST", f"instances/{user['instance']}/stop"
-                                )
-                            await self.store.sql(
-                                "UPDATE users SET status='sleeping',action=NULL,stage='',error=NULL"
-                                " WHERE id=?",
-                                (user["id"],),
-                            )
-                            continue
-                        await self.store.sql(
-                            "UPDATE users SET status='provisioning',stage='Starting your machine'"
-                            " WHERE id=?",
-                            (user["id"],),
-                        )
-                        if not user["instance"]:
-                            if user["creating"]:
-                                listing = await self.cloud.request("GET", "instances")
-                                entries = (
-                                    listing
-                                    if isinstance(listing, list)
-                                    else listing.get("instances", [])
-                                )
-                                found = [
-                                    i
-                                    for i in entries
-                                    if i.get("metadata", {}).get("swarm_user") == user["id"]
-                                ]
-                                if len(found) != 1:
-                                    raise HostingError(
-                                        "Previous machine creation outcome is unknown; "
-                                        "operator reconciliation required"
-                                    )
-                                instance = found[0]
-                            else:
-                                await self.store.sql(
-                                    "UPDATE users SET creating=1 WHERE id=?", (user["id"],)
-                                )
-                                instance = await self.cloud.request(
-                                    "POST",
-                                    "instances",
-                                    {
-                                        "type": "vm",
-                                        "template": "agent37-ubuntu",
-                                        "name": "Swarm " + user["id"],
-                                        "resources": {"cpu": 4, "memory": 8, "disk": 20},
-                                        "auto_sleep": False,
-                                        "metadata": {
-                                            "application": "swarm-forum",
-                                            "swarm_user": user["id"],
-                                        },
-                                    },
-                                )
-                            await self.store.sql(
-                                "UPDATE users SET instance=?,creating=0 WHERE id=?",
-                                (instance["id"], user["id"]),
-                            )
-                            user["instance"] = instance["id"]
-                        else:
-                            await self.cloud.request("POST", f"instances/{user['instance']}/start")
-                        await self.store.sql(
-                            "UPDATE users SET stage='Preparing Mattermost, Gitea and OpenCode'"
-                            " WHERE id=?",
-                            (user["id"],),
-                        )
-                        await self.install(user)
-                        await self.store.sql(
-                            "UPDATE users SET status='running',stage='',action=NULL,error=NULL"
-                            " WHERE id=?",
-                            (user["id"],),
-                        )
-                    except Exception as error:
-                        if isinstance(error, HostingError) and error.status in {
-                            400,
-                            401,
-                            402,
-                            403,
-                            404,
-                            422,
-                        }:
-                            await self.store.sql(
-                                "UPDATE users SET creating=0 WHERE id=?", (user["id"],)
-                            )
-                        if user["instance"]:
-                            # Failed setup must not leave an unattended billable machine running.
-                            with contextlib.suppress(Exception):
-                                await self.cloud.request(
-                                    "POST", f"instances/{user['instance']}/stop"
-                                )
-                        message = (
-                            str(error)
-                            if isinstance(error, HostingError)
-                            else "Setup interrupted; your data is preserved. "
-                            "Ask the operator to inspect diagnostics."
-                        )
-                        await self.store.sql(
-                            "UPDATE users SET status='failed',action=NULL,error=? WHERE id=?",
-                            (message, user["id"]),
-                        )
-                        logger.warning(
-                            "Hosted workspace %s setup failed (%s)",
-                            user["id"],
-                            type(error).__name__,
-                        )
+                    previous = self.operations.get(user["id"])
+                    if previous is None or previous.done():
+                        self.operations[user["id"]] = asyncio.create_task(self.run_job(user))
             except Exception:
                 logger.warning("Hosting job queue unavailable")
             await asyncio.sleep(5)
+
+    async def run_job(self, user: dict[str, Any]) -> None:
+        try:
+            if user["action"] == "pause":
+                if user["instance"]:
+                    await self.store.sql(
+                        "UPDATE users SET stage='Saving work' WHERE id=?", (user["id"],)
+                    )
+                    with contextlib.suppress(HostingError):
+                        await self.cloud.command(
+                            user["instance"],
+                            "docker stop --time 60 swarm-controller; "
+                            "cd /root/swarm/app; "
+                            "docker compose --env-file .env "
+                            "--env-file .state/coding.env "
+                            "-f infra/coding/compose.yaml stop; "
+                            "docker compose --env-file .env "
+                            "-f infra/compose.yaml stop; sync",
+                        )
+                    await self.cloud.request("POST", f"instances/{user['instance']}/stop")
+                await self.store.sql(
+                    "UPDATE users SET status='sleeping',action=NULL,stage='',error=NULL WHERE id=?",
+                    (user["id"],),
+                )
+                return
+            await self.store.sql(
+                "UPDATE users SET status='provisioning',stage='Starting your machine' WHERE id=?",
+                (user["id"],),
+            )
+            if not user["instance"]:
+                if user["creating"]:
+                    listing = await self.cloud.request("GET", "instances")
+                    entries = listing if isinstance(listing, list) else listing.get("instances", [])
+                    found = [
+                        i for i in entries if i.get("metadata", {}).get("swarm_user") == user["id"]
+                    ]
+                    if len(found) != 1:
+                        raise HostingError(
+                            "Previous machine creation outcome is unknown; "
+                            "operator reconciliation required"
+                        )
+                    instance = found[0]
+                else:
+                    await self.store.sql("UPDATE users SET creating=1 WHERE id=?", (user["id"],))
+                    instance = await self.cloud.request(
+                        "POST",
+                        "instances",
+                        {
+                            "type": "vm",
+                            "template": "agent37-ubuntu",
+                            "name": "Swarm " + user["id"],
+                            "resources": {"cpu": 4, "memory": 8, "disk": 20},
+                            "auto_sleep": False,
+                            "metadata": {
+                                "application": "swarm-forum",
+                                "swarm_user": user["id"],
+                            },
+                        },
+                    )
+                await self.store.sql(
+                    "UPDATE users SET instance=?,creating=0 WHERE id=?",
+                    (instance["id"], user["id"]),
+                )
+                user["instance"] = instance["id"]
+            else:
+                await self.cloud.request("POST", f"instances/{user['instance']}/start")
+            await self.store.sql(
+                "UPDATE users SET stage='Preparing Mattermost, Gitea and OpenCode' WHERE id=?",
+                (user["id"],),
+            )
+            await self.install(user)
+            await self.store.sql(
+                "UPDATE users SET status='running',stage='',action=NULL,error=NULL WHERE id=?",
+                (user["id"],),
+            )
+        except Exception as error:
+            if isinstance(error, HostingError) and error.status in {
+                400,
+                401,
+                402,
+                403,
+                404,
+                422,
+            }:
+                await self.store.sql("UPDATE users SET creating=0 WHERE id=?", (user["id"],))
+            if user["instance"]:
+                # Failed setup must not leave an unattended billable machine running.
+                with contextlib.suppress(Exception):
+                    await self.cloud.request("POST", f"instances/{user['instance']}/stop")
+            message = (
+                str(error)
+                if isinstance(error, HostingError)
+                else "Setup interrupted; your data is preserved. "
+                "Ask the operator to inspect diagnostics."
+            )
+            await self.store.sql(
+                "UPDATE users SET status='failed',action=NULL,error=? WHERE id=?",
+                (message, user["id"]),
+            )
+            logger.warning(
+                "Hosted workspace %s setup failed (%s)",
+                user["id"],
+                type(error).__name__,
+            )
 
     async def startup(self, app: web.Application) -> None:
         owner = await self.store.sql("SELECT id FROM users WHERE role=?", ("admin",))
@@ -439,9 +427,12 @@ class Hosting:
 
     async def cleanup(self, app: web.Application) -> None:
         self.stopping = True
+        tasks = list(self.operations.values())
         if self.runner:
-            self.runner.cancel()
-            await asyncio.gather(self.runner, return_exceptions=True)
+            tasks.append(self.runner)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def health(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True})

@@ -175,3 +175,55 @@ async def test_broker_inserts_only_owners_key_and_preserves_stream(hosted, monke
         assert "owners-real-key" not in response.text
     finally:
         await runner.cleanup()
+
+
+async def test_expiry_stops_own_machine_while_another_user_is_provisioning(hosted, monkeypatch):
+    import asyncio
+
+    hosting, client = hosted
+    owner_token = await login(client, "owner-code")
+    owner = (await client.get("/api/me", headers={"X-Swarm-Session": owner_token})).json()
+    friend_code = "friend-test-code"
+    await hosting.store.invite("Friend", "user", friend_code)
+    friend = (
+        await hosting.store.sql("SELECT id FROM users WHERE login_hash=?", (digest(friend_code),))
+    )[0]["id"]
+    await hosting.store.sql(
+        "UPDATE users SET instance='owner-node',status='running',run_until=1 WHERE id=?",
+        (owner["id"],),
+    )
+    await hosting.store.sql(
+        "UPDATE users SET instance='friend-node',status='queued',action='start' WHERE id=?",
+        (friend,),
+    )
+    installing = asyncio.Event()
+    release = asyncio.Event()
+
+    async def blocked_install(user):
+        installing.set()
+        await release.wait()
+
+    monkeypatch.setattr(hosting, "install", blocked_install)
+    task = asyncio.create_task(Hosting.jobs(hosting))
+    try:
+        await asyncio.wait_for(installing.wait(), timeout=1)
+        for _ in range(100):
+            row = await hosting.store.user(owner["id"])
+            if row["status"] == "sleeping":
+                break
+            await asyncio.sleep(0.01)
+        assert row["status"] == "sleeping"
+        assert row["instance"] == "owner-node"
+        assert (await hosting.store.user(friend))["status"] == "provisioning"
+        hosting.cloud.request.assert_any_await("POST", "instances/owner-node/stop")
+        assert all(
+            call.args[1] != "instances/friend-node/stop"
+            for call in hosting.cloud.request.await_args_list
+        )
+    finally:
+        hosting.stopping = True
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        for operation in hosting.operations.values():
+            operation.cancel()
+        await asyncio.gather(*hosting.operations.values(), return_exceptions=True)
