@@ -21,7 +21,7 @@ new ResizeObserver(()=>parent.postMessage({
 document.addEventListener('click',event=>{
   const link=event.target.closest('a');if(!link?.href||!latest?.services)return;
   const url=new URL(link.href);
-  for(const service of ['mattermost','gitea']){
+  for(const service of ['mattermost','gitea','opencode']){
     const base=latest.services[service];if(!base||new URL(base).origin!==url.origin)continue;
     event.preventDefault();parent.postMessage({type:'swarm-open-service',service,
       path:url.pathname+url.search+url.hash},location.origin);break;

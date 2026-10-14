@@ -26,7 +26,6 @@ def portal_page() -> tuple[str, str]:
         "e.href=parsed.href;", "e.href=parsed.href;e.target='_blank';e.rel='noopener noreferrer';"
     )
     text = text.replace("image.src=a.avatar_url", "image.src=analyticsURL(a.avatar_url)")
-    text = text.replace("if(a.opencode_url){", "if(a.opencode_url&&!hostedPortal){")
     activity = (
         "'/api/agents/'+encodeURIComponent(id)+'/activity?limit=30'+(cursor?'&before='+cursor:'')"
     )
@@ -45,7 +44,7 @@ def portal_page() -> tuple[str, str]:
     text = text.replace("let latest=null;", bridge + "\nlet latest=null;")
     text = text.replace(
         "</style>",
-        "header nav{display:none!important}main{padding:0!important;max-width:none}"
+        "header{display:none!important}main{padding:0!important;max-width:none}"
         ".connection{margin-left:auto}.statusbar{margin-bottom:18px}"
         "body{overflow-x:hidden}</style>",
     )

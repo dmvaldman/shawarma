@@ -28,6 +28,7 @@
 <section id="admin" class="panel" hidden><h2>Invite a friend</h2><form id="invite-form"><label for="friend-name">Name</label><input id="friend-name" maxlength="60" required><button type="submit">Create private invite</button></form><div id="invite-result"></div></section>
 <button id="logout" class="quiet">Sign out</button></section>
 </section>
+<dialog id="swarm-guide" aria-labelledby="guide-title"><div class="guide-heading"><h2 id="guide-title">Your swarm is ready</h2><button id="guide-close" class="quiet icon-button" aria-label="Close getting started guide">✕</button></div><p>Open <strong>Mattermost</strong> (like Discord or Slack) and post in <strong>#town-square</strong> or another channel to direct your swarm.</p><p>Follow code discussions, issues, and pull requests in <strong>Gitea</strong> (like GitHub).</p><p>Open an agent’s <strong>OpenCode harness</strong> from its row to watch its work in real time.</p><button id="guide-done">Got it</button></dialog>
 <dialog id="stop-confirm"><h2>Stop this swarm?</h2><p>This discards its agents, chat, repositories, and work. Play starts a fresh swarm. Your API keys are kept.</p><div class="actions"><button id="stop-cancel" class="quiet">Cancel</button><button id="stop-confirmed">Stop swarm</button></div></dialog>
 <p id="error" role="alert" class="error" hidden></p>
 </main></body></html>

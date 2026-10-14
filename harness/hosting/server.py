@@ -132,6 +132,7 @@ class Hosting:
             return web.json_response(
                 {
                     "id": user["id"],
+                    "instance_id": user["instance"],
                     "name": user["name"],
                     "role": user["role"],
                     "google_connected": bool(user["google_subject"]),

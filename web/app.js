@@ -1,5 +1,5 @@
 'use strict';
-const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature=null,googleEnabled=false;
+const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature=null,googleEnabled=false,lastWorkspaceStatus=null,guideKey=null;
 async function api(route,data){const response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
 function error(e){$('error').textContent=e.message;$('error').hidden=false;}
 async function action(fn){if(busy)return;busy=true;$('error').hidden=true;try{await fn();await refresh();}catch(e){error(e);}finally{busy=false;}}
@@ -11,6 +11,9 @@ $('settings-back').addEventListener('click',()=>{location.hash='';showScreen();}
 $('set-provider').addEventListener('click',()=>openSettings(true));
 window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-analytics-height'){const height=Number(event.data.height);if(Number.isFinite(height))$('analytics-frame').style.height=Math.max(500,Math.min(height+8,20000))+'px';}});
 $('analytics-frame').addEventListener('load',()=>{$('analytics-loading').hidden=true;});
+for(const id of ['guide-close','guide-done'])$(id).addEventListener('click',()=>$('swarm-guide').close());
+$('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setItem(guideKey,'dismissed');}catch{}});
+
 async function refresh(){try{
  user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
  const running=user.status==='running',transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
@@ -23,7 +26,9 @@ async function refresh(){try{
  $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
  const frame=$('analytics-frame');frame.hidden=!running;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
  renderProviders();showScreen();
- }catch(e){if(e.status===401){user=null;$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');document.querySelector('main').classList.remove('is-account');}else error(e);}}
+ if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
+ lastWorkspaceStatus=user.status;
+ }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');document.querySelector('main').classList.remove('is-account');}else error(e);}}
 
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',deepseek:'DeepSeek'};
 function renderProviders(){
@@ -66,7 +71,7 @@ $('stop-cancel').addEventListener('click',()=>$('stop-confirm').close());
 $('stop-confirmed').addEventListener('click',()=>{if(busy)return;$('stop-confirm').close();action(()=>api('stop',{}));});
 function openService(service,path=''){if(busy)return;const tab=window.open('about:blank','_blank');action(async()=>{try{const data=await api('open',{service,path});const url=new URL(data.url);if(url.protocol!=='https:'||!url.hostname.endsWith('.agent37.app'))throw new Error('Invalid service URL.');if(tab){tab.opener=null;tab.location.href=url.href;}else location.href=url.href;}catch(e){tab?.close();throw e;}});}
 for(const button of document.querySelectorAll('[data-service]'))button.addEventListener('click',()=>openService(button.dataset.service));
-window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-open-service'&&['mattermost','gitea'].includes(event.data.service)&&typeof event.data.path==='string')openService(event.data.service,event.data.path);});
+window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-open-service'&&['mattermost','gitea','opencode'].includes(event.data.service)&&typeof event.data.path==='string')openService(event.data.service,event.data.path);});
 $('invite-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{const data=await api('invite',{name:$('friend-name').value});$('invite-result').replaceChildren();const input=document.createElement('input');input.readOnly=true;input.value=data.url;input.addEventListener('click',()=>input.select());const note=document.createElement('p');note.className='small';note.textContent='This link grants access to their workspace. Share it privately.';$('invite-result').append(input,note);});});
 const params=new URLSearchParams(location.hash.slice(1)),code=params.get('invite');
 if(code){sessionStorage.setItem('swarm-invite',code);history.replaceState(null,'',location.pathname);}
