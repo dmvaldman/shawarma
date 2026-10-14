@@ -115,3 +115,13 @@ Hosted Mattermost bootstrapping skips the native welcome tour and hides its onbo
 checklist for the owner. It installs the same Discord Dark palette as the local swarm
 once per workspace, preserving later manual theme changes across resumes. Existing
 sleeping workspaces receive these defaults on their next resume.
+
+Resume reuses existing containers when a successful-install checkpoint matches the
+runtime files and generated tenant configuration. Its readiness checks start Postgres
+first, then Mattermost/Gitea/OpenCode, then the controller and service gateway. The fast
+path does not fetch Git, sync packages, run bootstrap, or build images. Portal, docs,
+and test changes are excluded from the runtime fingerprint. Runtime/configuration
+changes, missing containers, or a missing checkpoint run the normal installer. The
+checkpoint is cleared before installing and written only after successful setup;
+failed updates cannot be treated as ready. Existing deployments require one installer
+run to establish this checkpoint. VM boot and service readiness still take time.

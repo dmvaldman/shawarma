@@ -5,9 +5,12 @@ import base64
 import json
 import secrets
 import shlex
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+from harness.hosting.deployment import deployment_command, installation_key, runtime_revision
 
 
 class HostingError(RuntimeError):
@@ -56,6 +59,9 @@ class Cloud:
             + " | base64 -d | python3 infra/hosting/write_env.py; "
             "bash infra/hosting/tenant_boot.sh"
         )
+        revision = await asyncio.to_thread(runtime_revision, Path(__file__).parents[2])
+        key = installation_key(env, revision)
+        command = deployment_command(command, key)
         # Exec is bounded by the provider; detach the installer and poll its durable status.
         for _ in range(60):
             try:
@@ -74,7 +80,7 @@ class Cloud:
             + " >/root/swarm/setup.log 2>&1 </dev/null & echo started"
         )
         await self.command(instance, launch)
-        for _ in range(120):
+        for _ in range(300):
             result = await self.command(
                 instance, "if [ -f " + status + " ]; then cat " + status + "; fi"
             )
@@ -82,5 +88,5 @@ class Cloud:
                 if result.strip() != "0":
                     raise HostingError("Machine installer failed; protected setup log retained")
                 return
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
         raise HostingError("Machine setup is still running; inspect before retrying")
