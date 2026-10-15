@@ -62,3 +62,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .dashboard-toolbar h1,#status,#session-until{line-height:1.2}
 
 .welcome-banner h1{letter-spacing:-.025em}
+
+main:has(>#welcome:not([hidden]))>header{display:none}
