@@ -776,3 +776,26 @@ async def test_archive_failure_does_not_prevent_pause_and_is_visible(hosted, mon
     user = await hosting.store.user(owner["id"])
     assert user["status"] == "sleeping" and "could not be saved" in user["error"]
     hosting.cloud.request.assert_awaited_with("POST", "instances/node/stop")
+
+
+async def test_short_invites_redeem_and_old_long_codes_still_work(hosted):
+    hosting, client = hosted
+    owner_headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    invite = (
+        await client.post("/api/invite", json={"name": "Short"}, headers=owner_headers)
+    ).json()
+    code = invite["url"].split("#invite=")[1]
+    assert len(code) == 10
+    assert set(code) <= set("abcdefghjkmnpqrstuvwxyz23456789")
+    # Pending Google identities keep strong, non-human credentials.
+    pending = await hosting.store.invite("Google", subject="google-subject", activated=False)
+    assert len(pending) > 30
+    pending_headers = {"X-Swarm-Session": await login(client, pending)}
+    redeemed = await client.post("/api/redeem", json={"code": code}, headers=pending_headers)
+    assert redeemed.status_code == 200
+    me = (await client.get("/api/me", headers=pending_headers)).json()
+    assert me["activated"] and me["name"] == "Short"
+    legacy = "a_PreviouslyGenerated-LongInvite_1234567890123"
+    await hosting.store.invite("Legacy", code=legacy)
+    legacy_headers = {"X-Swarm-Session": await login(client, legacy)}
+    assert (await client.get("/api/me", headers=legacy_headers)).json()["name"] == "Legacy"

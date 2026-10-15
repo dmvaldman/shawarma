@@ -91,7 +91,13 @@ class HostingStore:
         subject: str | None = None,
         activated: bool = True,
     ) -> str:
-        code = code or secrets.token_urlsafe(32)
+        # Human-entered friend invites are short; internal and admin credentials stay long.
+        if code is None:
+            code = (
+                "".join(secrets.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(10))
+                if activated and role == "user"
+                else secrets.token_urlsafe(32)
+            )
         agent_token = secrets.token_urlsafe(32)
         await self.sql(
             "INSERT INTO users(id,name,role,login_hash,vault,agent_token_hash,created_at,"
