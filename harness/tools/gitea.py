@@ -7,6 +7,7 @@ from urllib.parse import unquote, urlsplit
 import httpx
 
 from harness.config import Settings
+from harness.core.links import public_html_urls
 
 
 def repository_path(path: str) -> str:
@@ -73,6 +74,6 @@ async def request_repository(
         }
     return {
         "status": response.status_code,
-        "data": response.json() if response.content else None,
+        "data": public_html_urls(response.json(), settings) if response.content else None,
         "repository": settings.gitea_owner + "/" + settings.gitea_repo,
     }

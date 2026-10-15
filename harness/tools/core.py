@@ -15,6 +15,7 @@ from harness.coding.service import Coding
 from harness.config import Settings
 from harness.core.activity import Activity
 from harness.core.coordination import Coordination
+from harness.core.links import public_service_links
 from harness.core.types import ToolSpec
 from harness.mattermost.client import Client, MattermostError
 from harness.mattermost.streaming import ChannelStream
@@ -893,7 +894,9 @@ class CoreTools:
                     await self.store.save_tool_result(self.agent_id, call_id, result, [])
                     await self.activity.best_effort(self.activity.tool(self.agent_id, call_id))
                     return result
-                sent = await self.bot.post_channel(args["channel_id"], args["text"], root)
+                sent = await self.bot.post_channel(
+                    args["channel_id"], public_service_links(args["text"], self.settings), root
+                )
                 self.observe_posts([sent])
                 self.post_deferrals.discard(args["channel_id"])
                 result = sent.model_dump()

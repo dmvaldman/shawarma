@@ -9,6 +9,7 @@ import httpx
 from harness.coding.clients import CodingError, check
 from harness.coding.reset import creation_auth
 from harness.config import Settings
+from harness.core.links import public_service_links
 from harness.persistence.store import Store
 
 
@@ -112,7 +113,7 @@ async def provision(
             return {
                 "repository": repo["full_name"],
                 "name": name,
-                "url": repo["html_url"],
+                "url": public_service_links(repo["html_url"], settings),
                 "channel_id": channel,
                 "default_branch": "main",
             }

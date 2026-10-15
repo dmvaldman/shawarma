@@ -9,6 +9,7 @@ import httpx
 
 from harness.config import Settings
 from harness.core.interfaces import ModelProvider
+from harness.core.links import service_link_policy
 from harness.mattermost.client import Client
 from harness.models.context import active_context
 from harness.models.openai import OpenAIProvider, ProviderError
@@ -150,6 +151,7 @@ class Runtime:
                     elif not self.typing_channel:
                         self.typing_channel = state["general_id"]
                     prompt = await self.store.effective_prompt(self.agent_id)
+                    prompt += service_link_policy(self.settings)
                     pending_ids = [n.id for n in notifications]
                     inputs = []
                     if notifications:

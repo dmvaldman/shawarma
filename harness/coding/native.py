@@ -14,6 +14,7 @@ from harness.coding.identities import identity as gitea_identity
 from harness.coding.repositories import selected
 from harness.coding.service import Coding
 from harness.core.activity import Activity
+from harness.core.links import service_link_policy
 
 
 class Native(Coding):
@@ -33,20 +34,29 @@ class Native(Coding):
         account = await gitea_identity(self.store, target, agent)
         if account["token"] not in self.activity.secrets:
             self.activity.secrets.append(account["token"])
-        return await self.store.effective_prompt(agent) + (
-            "\nYour primary repository is " + target.gitea_owner + "/" + target.gitea_repo + ". "
-            "\nYour Gitea username is " + str(account["username"]) + ". "
-            "\n## Native Workspace\n"
-            "You are this Swarm agent, operating directly in OpenCode. Use the supplied "
-            "swarm tools for communication and delegation, and native tools for coding. "
-            "There is no coding handoff. Ordinary text is private except immediately after "
-            "begin_channel_post, which publishes your next text response. Use that tool to stream "
-            "new public messages. Reserve buffered post_channel for existing verbatim content. "
-            "Use only your checkout and branch " + str(session["branch"]) + ". "
-            "Commit/push changes there and merge reviewed, tested PRs through Gitea into main. "
-            "Never directly push main or edit peers' directories. "
-            "Use gitea_request for issues/PRs. "
-            "Do not read, print or commit credentials. Only spawn_agent creates collaborators."
+        return (
+            await self.store.effective_prompt(agent)
+            + service_link_policy(target)
+            + (
+                "\nYour primary repository is "
+                + target.gitea_owner
+                + "/"
+                + target.gitea_repo
+                + ". "
+                "\nYour Gitea username is " + str(account["username"]) + ". "
+                "\n## Native Workspace\n"
+                "You are this Swarm agent, operating directly in OpenCode. Use the supplied "
+                "swarm tools for communication and delegation, and native tools for coding. "
+                "There is no coding handoff. Ordinary text is private except immediately after "
+                "begin_channel_post, which publishes your next text response. "
+                "Use that tool to stream "
+                "new public messages. Reserve buffered post_channel for existing verbatim content. "
+                "Use only your checkout and branch " + str(session["branch"]) + ". "
+                "Commit/push changes there and merge reviewed, tested PRs through Gitea into main. "
+                "Never directly push main or edit peers' directories. "
+                "Use gitea_request for issues/PRs. "
+                "Do not read, print or commit credentials. Only spawn_agent creates collaborators."
+            )
         )
 
     async def prepare_session(self, client: OpenCode, agent: UUID, session: dict[str, Any]) -> None:

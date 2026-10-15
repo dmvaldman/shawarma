@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from harness.coding.clients import OpenCode
 from harness.config import Settings
+from harness.core.links import public_service_links
 from harness.mattermost.client import Client
 from harness.persistence.store import Store
 
@@ -114,7 +115,7 @@ class ChannelStream:
                         return
                     if part.get("type") != "text" or part.get("synthetic"):
                         continue
-                    text = part.get("text", "")[:12000]
+                    text = public_service_links(part.get("text", ""), self.settings)[:12000]
                     if not text:
                         continue
                     if row["message_id"] and (
