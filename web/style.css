@@ -88,3 +88,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .dashboard-toolbar .section-heading{align-items:flex-end}
 
 :where(button,a,input,select,textarea,summary,[role="button"]){-webkit-tap-highlight-color:transparent}
+
+.session-controls #session-until{flex:1;font-size:var(--font-medium);line-height:1.4;color:var(--muted)}

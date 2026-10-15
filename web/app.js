@@ -24,8 +24,8 @@ async function refresh(){try{
  for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running);
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
  $('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
- $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;
- $('session-until').hidden=!running;$('session-until').textContent=running?'(Until '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(user.run_until*1000)).replace(':','.')+')':'';$('provider-warning').hidden=hasProviders;
+ $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;$('duration').hidden=running;
+ $('session-until').hidden=!running;$('session-until').textContent=running?'Swarm will pause at '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(user.run_until*1000)):'';$('provider-warning').hidden=hasProviders;
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
  $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
@@ -70,7 +70,6 @@ $('activation-logout').addEventListener('click',signOut);
 $('provider-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('providers',{provider:$('provider').value,key:$('provider-key').value});$('provider-key').value='';$('provider-form').hidden=true;});});
 $('start').addEventListener('click',()=>action(()=>api('start',{hours:Number($('duration').value)})));
 $('pause').addEventListener('click',()=>action(()=>api('pause',{})));
-$('duration').addEventListener('change',()=>{if(user?.status==='running')action(()=>api('start',{hours:Number($('duration').value)}));});
 $('stop').addEventListener('click',()=>$('stop-confirm').showModal());
 $('stop-cancel').addEventListener('click',()=>$('stop-confirm').close());
 $('stop-confirmed').addEventListener('click',()=>{if(busy)return;$('stop-confirm').close();action(()=>api('stop',{}));});
