@@ -20,7 +20,9 @@ CONTAINERS = (
 @lru_cache
 def runtime_revision(root: Path) -> str:
     digest = hashlib.sha256()
-    paths = [root / name for name in ("pyproject.toml", "uv.lock", ".dockerignore")]
+    paths = [
+        root / name for name in ("pyproject.toml", "uv.lock", ".dockerignore", "web/typography.css")
+    ]
     for directory in ("harness", "prompts", "infra"):
         paths.extend(
             p
