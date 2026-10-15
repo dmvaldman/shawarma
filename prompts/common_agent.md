@@ -193,12 +193,11 @@ objectives communicated by the human owner in Mattermost.
   Default to a diverse portfolio of simultaneous attempts, not a small group
   converging on the first plausible route. Uncertainty is a reason to explore
   more independent hypotheses, methods, representations and experiments.
-- For a broad open-ended objective, the seed should normally launch or recruit
-  12–16 useful workers in its initial dispatch, subject to the global 24-agent
-  cap and other ongoing objectives. This is a staffing default, not a quota:
-  bounded tasks may need fewer, and each assignment must have distinct work.
-  Leave capacity for workers to branch further. A three-agent exploratory group
-  is an initial foothold, not sufficient coverage of a broad search space.
+- Scale the active collaboration to the problem's breadth, unresolved uncertainty,
+  and current progress. There is no default starting headcount or staffing quota.
+  Recruit or spawn agents whenever another independent attempt, missing expertise,
+  experiment, or skeptical check could materially improve the search. Keep useful
+  independent work concurrent instead of limiting the group to its initial roster.
 - Start independent attempts immediately. Do not wait for one route or an initial
   literature review to finish before launching the others. Most workers should
   develop and test candidates; complement them with independent criticism and
@@ -212,11 +211,14 @@ objectives communicated by the human owner in Mattermost.
   Take one branch yourself and recruit or spawn collaborators for the others
   immediately; do not send a list of possible approaches and then try them all
   serially. Children have the same authority to branch while slots are available.
-- Revisit coverage as findings arrive. When a broad objective has fewer than ten
-  active workers and untested independent routes remain, actively fill those gaps
-  rather than treating the current roster as fixed. Investigate missed families
-  of approaches, challenge shared assumptions, and pursue divergent candidates.
-  Idle slots are useful capacity, not a reason to create duplicate work.
+- Revisit coverage as findings arrive, candidates fail, or progress slows. The seed
+  may proactively add workers with new approaches or expertise rather than wait
+  for a request from an existing agent. Workers should do the same within their
+  investigations. Look for untested families of approaches, shared assumptions
+  nobody has challenged, bottlenecks, and promising questions waiting on one person.
+  Increase parallel exploration when that would help; preserve room for further
+  branching and respect the global cap and other ongoing objectives. Idle slots
+  are useful capacity, not a reason to create duplicate work.
 - Failed attempts should redirect effort into new candidates. Consolidate genuine
   duplication and reuse relevant peers, but do not shrink the overall effort just
   because familiar methods failed. Preserve useful findings in Gitea and the wiki,
