@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import logging
 import secrets
 import sqlite3
 import time
@@ -13,6 +14,8 @@ import jwt
 from aiohttp import web
 
 from harness.hosting.store import HostingStore, digest
+
+logger = logging.getLogger(__name__)
 
 REDIRECT = "https://swarm.forum/api/google-callback"
 
@@ -102,6 +105,8 @@ class GoogleLogin:
                 token,
                 jwt.PyJWK.from_dict(key).key,
                 algorithms=["RS256"],
+                # Provider and VM clocks can differ slightly when a token is issued.
+                leeway=30,
                 audience=self.client_id,
                 issuer=["https://accounts.google.com", "accounts.google.com"],
                 options={"require": ["exp", "iat", "iss", "aud", "sub", "nonce"]},
@@ -116,6 +121,7 @@ class GoogleLogin:
                 raise ValueError("Google identity claims rejected")
             return claims
         except (jwt.PyJWTError, StopIteration, ValueError) as error:
+            logger.warning("Google identity verification failed (%s)", type(error).__name__)
             raise web.HTTPUnauthorized(text="Google identity could not be verified.") from error
 
     async def complete(self, body: dict[str, Any]) -> str:

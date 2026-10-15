@@ -175,3 +175,44 @@ async def test_only_one_google_identity_can_claim_an_invite(google):
     assert sum(result is None for result in results) == 1
     assert sum(isinstance(result, ValueError) for result in results) == 1
     assert (await login.store.user(owner))["google_subject"] in {"alice", "bob"}
+
+
+@pytest.mark.parametrize("skew,accepted", [(2, True), (120, False)])
+async def test_google_token_clock_skew_is_bounded(google, monkeypatch, skew, accepted):
+    login, _ = google
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key(), as_dict=True)
+    jwk["kid"] = "clock-key"
+    now = int(time.time())
+    token = jwt.encode(
+        {
+            "sub": "clock-sub",
+            "iss": "https://accounts.google.com",
+            "aud": "test-client",
+            "iat": now + skew,
+            "exp": now + 300,
+            "nonce": "clock-nonce",
+            "email_verified": True,
+        },
+        key,
+        algorithm="RS256",
+        headers={"kid": "clock-key"},
+    )
+    original = httpx.AsyncClient
+
+    def provider(request):
+        return httpx.Response(
+            200, json={"id_token": token} if request.url.path == "/token" else {"keys": [jwk]}
+        )
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original(**{**kwargs, "transport": httpx.MockTransport(provider)}),
+    )
+    flow = {"nonce": "clock-nonce", "verifier": "clock-verifier"}
+    if accepted:
+        assert (await login.claims("code", flow))["sub"] == "clock-sub"
+    else:
+        with pytest.raises(web.HTTPUnauthorized):
+            await login.claims("code", flow)
