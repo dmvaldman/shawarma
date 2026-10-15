@@ -12,6 +12,7 @@ from uuid import UUID
 
 from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
 
+from harness.api.page import dashboard_page
 from harness.hosting.billing import HostedBilling
 from harness.hosting.cloud import Cloud, HostingError
 from harness.hosting.store import HostingStore, digest
@@ -20,7 +21,7 @@ PORT = 18066
 
 
 def portal_page() -> tuple[str, str]:
-    text = (Path(__file__).parents[1] / "api/dashboard.html").read_text()
+    text = dashboard_page()
     nonce = secrets.token_urlsafe(24)
     text = text.replace("<script>", f'<script nonce="{nonce}">')
     text = text.replace("'use strict';", "'use strict';\nconst hostedPortal=true;", 1)

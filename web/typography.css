@@ -1,0 +1,7 @@
+/* Shared by the portal and the standalone/hosted analytics dashboard. */
+:root{
+  --font-small:14px;
+  --font-medium:16px;
+  --font-large:20px;
+  --font-extra-large:28px;
+}

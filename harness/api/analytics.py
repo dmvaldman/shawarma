@@ -6,7 +6,6 @@ import json
 import logging
 import time
 from datetime import UTC, datetime
-from importlib.resources import files
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -16,6 +15,7 @@ from aiohttp import web
 from harness.api.activity import AgentActivity
 from harness.api.billing import Billing
 from harness.api.git_stats import GitStats
+from harness.api.page import dashboard_page
 from harness.config import Settings
 from harness.mattermost.client import Client
 from harness.persistence.store import Store
@@ -414,7 +414,7 @@ class Analytics:
 
     async def index(self, request: web.Request) -> web.Response:
         return web.Response(
-            text=files("harness.api").joinpath("dashboard.html").read_text(),
+            text=dashboard_page(),
             content_type="text/html",
             headers={"Cache-Control": "no-store"},
         )

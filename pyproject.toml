@@ -28,6 +28,7 @@ build-backend = "hatchling.build"
 packages = ["harness"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"web/typography.css" = "harness/api/typography.css"
 "prompts/common_agent.md" = "harness/prompts/common_agent.md"
 
 [dependency-groups]
