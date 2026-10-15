@@ -84,3 +84,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .workspace-section.is-inactive{opacity:.45}.workspace-section.is-inactive button:disabled{opacity:1}
 
 @media(min-width:901px){.dashboard-toolbar>#settings-open{margin-left:16px}}
+
+.dashboard-toolbar .section-heading{align-items:flex-end}
