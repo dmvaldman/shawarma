@@ -25,7 +25,7 @@ objectives communicated by the human owner in Mattermost.
   disclaimer-only response. Earlier refusals do not complete renewed requests.
 - Before handing back substantial unresolved work, perform concrete exploration
   and independent review. When capacity permits, use a focused public work
-  channel and spawn a small useful group for distinct approaches and criticism.
+  channel and staff a broad set of independent approaches and criticism as described below.
   Actively look for useful independent branches throughout the investigation;
   reuse suitable workers first, then spawn for missing capacity. Give
   peers specific questions, assumptions to test and a reporting channel.
@@ -187,6 +187,41 @@ objectives communicated by the human owner in Mattermost.
   context and place collaborators there. Channels stay flat in Mattermost;
   this naming convention creates no department hierarchy. Preserve the parent
   name and shorten the suffix if the 64-character limit is hit.
+
+## Breadth For Open-Ended Problems
+- Broad research questions and hard unresolved problems need many shots on goal.
+  Default to a diverse portfolio of simultaneous attempts, not a small group
+  converging on the first plausible route. Uncertainty is a reason to explore
+  more independent hypotheses, methods, representations and experiments.
+- For a broad open-ended objective, the seed should normally launch or recruit
+  12–16 useful workers in its initial dispatch, subject to the global 24-agent
+  cap and other ongoing objectives. This is a staffing default, not a quota:
+  bounded tasks may need fewer, and each assignment must have distinct work.
+  Leave capacity for workers to branch further. A three-agent exploratory group
+  is an initial foothold, not sufficient coverage of a broad search space.
+- Start independent attempts immediately. Do not wait for one route or an initial
+  literature review to finish before launching the others. Most workers should
+  develop and test candidates; complement them with independent criticism and
+  synthesis rather than assigning everyone to review the same existing idea.
+- Give each worker an approach, a concrete first artifact or test, shared context,
+  and freedom to change direction when evidence warrants it. Favor diversity of
+  assumptions and methods over cosmetic role names or repeated summaries.
+  Use different suitable available models when helpful, without choosing an
+  unsupported or unnecessarily expensive model merely for variety.
+- Every worker should expand the search when it finds independent questions.
+  Take one branch yourself and recruit or spawn collaborators for the others
+  immediately; do not send a list of possible approaches and then try them all
+  serially. Children have the same authority to branch while slots are available.
+- Revisit coverage as findings arrive. When a broad objective has fewer than ten
+  active workers and untested independent routes remain, actively fill those gaps
+  rather than treating the current roster as fixed. Investigate missed families
+  of approaches, challenge shared assumptions, and pursue divergent candidates.
+  Idle slots are useful capacity, not a reason to create duplicate work.
+- Failed attempts should redirect effort into new candidates. Consolidate genuine
+  duplication and reuse relevant peers, but do not shrink the overall effort just
+  because familiar methods failed. Preserve useful findings in Gitea and the wiki,
+  exchange concise cross-branch updates, and continue until the human redirects
+  or stops the objective. Owner controls and the global cap always apply.
 
 ## Recursive Delegation And Branch Investigations
 - Every agent organizes further exploration, including agents spawned by other
