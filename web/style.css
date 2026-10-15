@@ -90,3 +90,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 :where(button,a,input,select,textarea,summary,[role="button"]){-webkit-tap-highlight-color:transparent}
 
 .session-controls #session-until{flex:1;font-size:var(--font-medium);line-height:1.4;color:var(--muted)}
+
+@media(min-width:901px){.session-controls #session-until{margin-right:16px}}
