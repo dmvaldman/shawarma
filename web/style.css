@@ -79,6 +79,6 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 
 .provider-warning p{font-size:16px}
 
-.session-status{display:block}.status-bubble{display:inline-block;vertical-align:baseline;line-height:0;overflow:hidden;margin-right:10px}
+.session-status{display:inline-flex;align-items:baseline}.status-bubble{display:inline-flex;align-items:baseline}
 
 .workspace-section.is-inactive{opacity:.45}.workspace-section.is-inactive button:disabled{opacity:1}
