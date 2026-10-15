@@ -111,6 +111,8 @@ class Worker:
             ).encode(),
         )
         result: dict[str, str] = json.loads(out)
+        if result.get("error") == "WORKSPACE_RECOVERY_REQUIRED":
+            raise CodingError("Workspace needs recovery: " + result["detail"])
         return result
 
     async def stop_commands(self, directory: str) -> None:
