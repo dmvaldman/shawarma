@@ -5,6 +5,7 @@ import logging
 from uuid import UUID
 
 from harness.config import Settings
+from harness.core.coordination import Coordination
 from harness.core.interfaces import ModelProvider
 from harness.core.runtime import Runtime
 from harness.mattermost.client import Client
@@ -18,8 +19,12 @@ class Coordinator(Runtime):
     def __init__(
         self, store: Store, bot: Client, agent_id: UUID, settings: Settings, provider: ModelProvider
     ):
+        worker_settings = settings
         settings = settings.model_copy(update={"agent_engine": "provider", "coding_enabled": False})
         super().__init__(store, bot, agent_id, settings, provider)
+        # Seed inference is provider-only, but its children use the workspace worker runtime.
+        self.tools.coordination = Coordination(store, worker_settings)
+        self.tools.catalog = self.tools.coordination.catalog
         self.tools.coordinator = True
         self.tools.manifests = [tool for tool in self.tools.manifests if tool.name != "code_task"]
 

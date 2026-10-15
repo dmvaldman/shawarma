@@ -167,14 +167,7 @@ class Supervisor:
                     if seed
                     else (NativeRuntime if self.settings.agent_engine == "opencode" else Runtime)
                 )
-                runtime_settings = (
-                    self.settings.model_copy(
-                        update={"agent_engine": "provider", "coding_enabled": False}
-                    )
-                    if seed
-                    else self.settings
-                )
-                runtime = runtime_type(self.store, bot, agent, runtime_settings, self.provider)
+                runtime = runtime_type(self.store, bot, agent, self.settings, self.provider)
                 runtime.model_slots = asyncio.Semaphore(1) if seed else self.slots
                 runtime.tools.model_slots = (
                     asyncio.Semaphore(1)
