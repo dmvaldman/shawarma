@@ -281,6 +281,10 @@ class Coding:
                     "GET", f"/session/{session['session_id']}/message", session["directory"]
                 )
                 await self.observe_session(agent, session, messages)
+                # A native activation may contain many model steps before going idle.
+                # Keep its existing ledger row current; finish overwrites, never adds, usage.
+                _, observed_usage = summarize(messages, baseline)
+                await self.store.observe_usage(turn_id, observed_usage)
                 replies = [m for m in messages if m["info"].get("parentID") == prompt_id]
                 if self.unified:
                     replies = [

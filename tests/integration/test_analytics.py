@@ -169,3 +169,26 @@ async def test_http_dashboard_workspace_guard_and_no_secrets(runtime_store, monk
         ).status == 403
         assert (await client.get("/api/stats", headers={"Host": "evil.example"})).status == 403
         assert (await client.post("/api/stats")).status == 405
+
+
+async def test_live_usage_replaces_counters_and_settles_without_double_counting(runtime_store):
+    store, _, agent, workspace = runtime_store
+    turn = await store.reserve_cost(agent, Decimal(0), [])
+    first = Usage(cost_usd=Decimal(0), input_tokens=100, output_tokens=20)
+    await store.observe_usage(turn, first)
+    await store.observe_usage(turn, first)
+    assert (await ledger_snapshot(store, workspace))["totals"]["tokens"] == 120
+    await store.observe_usage(turn, Usage(cost_usd=Decimal(0), input_tokens=200, output_tokens=40))
+    assert (await ledger_snapshot(store, workspace))["totals"]["tokens"] == 240
+    await store.finish(turn, Usage(cost_usd=Decimal(0), input_tokens=300, output_tokens=60))
+    await store.observe_usage(turn, Usage(cost_usd=Decimal(0), input_tokens=999, output_tokens=999))
+    data = await ledger_snapshot(store, workspace)
+    assert data["totals"]["tokens"] == 360
+    assert data["totals"]["in_flight_calls"] == 0
+    # Confirmed intermediate usage survives an uncertain final outcome.
+    unknown = await store.reserve_cost(agent, Decimal(0), [])
+    await store.observe_usage(
+        unknown, Usage(cost_usd=Decimal(0), input_tokens=80, output_tokens=10)
+    )
+    await store.finish(unknown, None)
+    assert (await ledger_snapshot(store, workspace))["totals"]["tokens"] == 450

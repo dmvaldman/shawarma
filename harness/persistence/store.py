@@ -191,13 +191,15 @@ class Store:
             if not await conn.fetchval("SELECT 1 FROM schema_migrations WHERE version=23"):
                 await conn.execute(
                     files("harness.persistence")
-                    .joinpath("migrations/023_work_repositories.sql").read_text()
+                    .joinpath("migrations/023_work_repositories.sql")
+                    .read_text()
                 )
                 await conn.execute("INSERT INTO schema_migrations VALUES (23)")
             if not await conn.fetchval("SELECT 1 FROM schema_migrations WHERE version=24"):
                 await conn.execute(
                     files("harness.persistence")
-                    .joinpath("migrations/024_agent_avatars.sql").read_text()
+                    .joinpath("migrations/024_agent_avatars.sql")
+                    .read_text()
                 )
                 await conn.execute("INSERT INTO schema_migrations VALUES (24)")
         return store
@@ -719,6 +721,17 @@ class Store:
     async def record(self, reservation_id: UUID, usage: Usage) -> None:
         await self.finish(reservation_id, usage)
 
+    async def observe_usage(self, turn_id: UUID, usage: Usage) -> None:
+        """Publish confirmed intermediate counters on the same row later settled by finish."""
+        await self.pool.execute(
+            "UPDATE agent_turns SET input_tokens=$2,output_tokens=$3 WHERE id=$1 "
+            "AND state='prepared' AND (input_tokens IS DISTINCT FROM $2 "
+            "OR output_tokens IS DISTINCT FROM $3)",
+            turn_id,
+            usage.input_tokens,
+            usage.output_tokens,
+        )
+
     async def finish(
         self,
         turn_id: UUID,
@@ -754,7 +767,8 @@ class Store:
             await c.execute(
                 (
                     "UPDATE agent_turns SET "
-                    "state=$2,cost=$3,input_tokens=$4,output_tokens=$5,output=$6,prov"
+                    "state=$2,cost=$3,input_tokens=coalesce($4,input_tokens),"
+                    "output_tokens=coalesce($5,output_tokens),output=$6,prov"
                     "ider_request_id=$7,provider_usage=$8,finished_at=now() WHERE id=$1"
                 ),
                 turn_id,
