@@ -76,3 +76,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
  .dashboard-toolbar>.session-controls{grid-column:1/-1;grid-row:2;width:100%}
  .dashboard-toolbar>.session-controls select{flex:1;min-width:0}
 }
+
+.provider-warning p{font-size:16px}
