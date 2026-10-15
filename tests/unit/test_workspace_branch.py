@@ -72,3 +72,22 @@ async def test_workspace_recovery_reason_surfaces_without_command_output(monkeyp
     )
     with pytest.raises(CodingError, match="uncommitted changes"):
         await worker.workspace(uuid4(), uuid4())
+
+
+@pytest.mark.parametrize("suffix", ["-mixed", "-experiment"])
+def test_own_feature_branch_preserves_unfinished_work(checkout, suffix):
+    path, git = checkout
+    feature = "agents/test" + suffix
+    git("checkout", "-b", feature)
+    (path / "experiment.py").write_text("# work in progress")
+    restore(path, "agents/test", git)
+    assert git("branch", "--show-current") == feature
+    assert (path / "experiment.py").read_text() == "# work in progress"
+
+
+def test_another_agents_namespace_is_not_accepted(checkout):
+    path, git = checkout
+    git("checkout", "-b", "agents/testing-mixed")
+    with pytest.raises(RuntimeError, match="unexpected branch"):
+        restore(path, "agents/test", git)
+    assert git("branch", "--show-current") == "agents/testing-mixed"

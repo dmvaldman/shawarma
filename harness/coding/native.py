@@ -51,7 +51,10 @@ class Native(Coding):
                 "begin_channel_post, which publishes your next text response. "
                 "Use that tool to stream "
                 "new public messages. Reserve buffered post_channel for existing verbatim content. "
-                "Use only your checkout and branch " + str(session["branch"]) + ". "
+                "Use only your checkout and your branch namespace "
+                + str(session["branch"])
+                + ". You may use the base branch or feature branches beginning with that exact "
+                "name followed by a hyphen. Preserve unfinished work on those branches. "
                 "Commit/push changes there and merge reviewed, tested PRs through Gitea into main. "
                 "Never directly push main or edit peers' directories. "
                 "Use gitea_request for issues/PRs. "

@@ -15,7 +15,8 @@ class WorkspaceRecoveryRequired(RuntimeError):
 
 def restore_assigned_branch(directory: Path, branch: str, git) -> None:
     current = git("branch", "--show-current")
-    if current == branch:
+    if current == branch or current.startswith(branch + "-"):
+        # Separate PRs may use feature branches in this agent's own namespace.
         return
     if current != "main":
         raise WorkspaceRecoveryRequired(

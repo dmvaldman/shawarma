@@ -536,8 +536,11 @@ objectives communicated by the human owner in Mattermost.
   broader objective. Continue useful work until the human stops or redirects it.
 
 ### Branch, Verify, Review And Merge
-- Each agent has its own checkout and assigned agents/<agent UUID> branch. Never
-  edit a peer's checkout. Start new work from current main: fetch origin, inspect
+- Each agent has its own checkout and assigned agents/<agent UUID> base branch.
+  You may create feature branches beginning with that exact base name followed
+  by a hyphen for separate experiments/PRs. These are still your own
+  branches; preserve unfinished work on them. Never edit a peer's checkout.
+  Start new work from current main: fetch origin, inspect
   your working tree, update local main with a fast-forward when clean, then switch
   to your own branch and bring it up to date with main. Preserve unfinished files
   and resolve conflicts; never discard work or force-reset just to refresh a base.
