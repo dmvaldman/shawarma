@@ -64,3 +64,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .welcome-banner h1{letter-spacing:-.025em}
 
 main:has(>#welcome:not([hidden]))>header{display:none}
+
+#settings-back{display:inline-flex;align-items:center;gap:8px;line-height:1.4}#settings-back svg{display:block;flex-shrink:0}
