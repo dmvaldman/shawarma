@@ -15,7 +15,7 @@ window.addEventListener('message',event=>{if(event.origin===location.origin&&eve
 $('analytics-frame').addEventListener('load',()=>{$('analytics-loading').hidden=true;});
 window.addEventListener('message',event=>{if(event.origin===location.origin&&event.source===$('analytics-frame').contentWindow&&event.data?.type==='swarm-workspace-status'&&typeof event.data.status==='string'){const status=event.data.status;$('activity-status').textContent=status.charAt(0).toUpperCase()+status.slice(1);$('activity-status').dataset.state=status;$('activity-status').hidden=user?.status!=='running';}});
 
-for(const id of ['guide-close','guide-done'])$(id).addEventListener('click',()=>$('swarm-guide').close());
+$('guide-done').addEventListener('click',()=>$('swarm-guide').close());
 $('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setItem(guideKey,'dismissed');}catch{}});
 
 async function refresh(){try{
