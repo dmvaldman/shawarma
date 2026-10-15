@@ -60,3 +60,5 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 
 .dashboard-toolbar .section-heading,.session-status{align-items:baseline}
 .dashboard-toolbar h1,#status,#session-until{line-height:1.2}
+
+.welcome-banner h1{letter-spacing:-.025em}
