@@ -23,7 +23,7 @@ document.addEventListener('click',event=>{
   const url=new URL(link.href);
   for(const service of ['mattermost','gitea','opencode']){
     const base=latest.services[service];if(!base||new URL(base).origin!==url.origin)continue;
-    event.preventDefault();parent.postMessage({type:'swarm-open-service',service,
+    event.preventDefault();if(latest.services_available===false)return;parent.postMessage({type:'swarm-open-service',service,
       path:url.pathname+url.search+url.hash},location.origin);break;
   }
 });

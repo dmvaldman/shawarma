@@ -26,6 +26,13 @@ class AgentActivity:
                 raise ValueError()
         except ValueError:
             raise web.HTTPBadRequest(text="Invalid agent/cursor/page size") from None
+        return web.json_response(
+            await self.read(agent, before, limit), headers={"Cache-Control": "no-store"}
+        )
+
+    async def read(
+        self, agent: UUID, before: int | None = None, limit: int = 100
+    ) -> dict[str, Any]:
         row = await self.store.pool.fetchrow(
             "SELECT a.state,a.control_paused,a.credential,a.availability,"
             "coalesce(p.username,a.identity->>'mattermost_username') username,"
@@ -95,21 +102,18 @@ class AgentActivity:
                     data[field] = data[field].isoformat()
             return data
 
-        return web.json_response(
-            {
-                "agent": {
-                    "id": str(agent),
-                    "username": row["username"],
-                    "state": row["state"],
-                    "availability": row["availability"],
-                    "working": working,
-                },
-                "events": [entry(v) for v in rows[:limit]],
-                "current": [entry(v) for v in current],
-                "next_cursor": rows[limit - 1]["sequence"] if len(rows) > limit else None,
-                "source_unavailable": unavailable,
-                "reasoning_note": "Reasoning is included only when exposed by provider/OpenCode; "
-                "hidden or omitted reasoning cannot be recovered.",
+        return {
+            "agent": {
+                "id": str(agent),
+                "username": row["username"],
+                "state": row["state"],
+                "availability": row["availability"],
+                "working": working,
             },
-            headers={"Cache-Control": "no-store"},
-        )
+            "events": [entry(v) for v in rows[:limit]],
+            "current": [entry(v) for v in current],
+            "next_cursor": rows[limit - 1]["sequence"] if len(rows) > limit else None,
+            "source_unavailable": unavailable,
+            "reasoning_note": "Reasoning is included only when exposed by provider/OpenCode; "
+            "hidden or omitted reasoning cannot be recovered.",
+        }

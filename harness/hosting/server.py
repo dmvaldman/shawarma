@@ -152,6 +152,8 @@ class Hosting:
                         p: self.masked_key(k) for p, k in vault["providers"].items() if k
                     },
                     "services": list(PORTS) if user["status"] == "running" else [],
+                    "analytics_available": user["status"] == "running"
+                    or bool(user["status"] == "sleeping" and await self.analytics.has_saved(user)),
                 }
             )
         if request.method == "POST" and route == "redeem":
@@ -330,13 +332,16 @@ class Hosting:
     async def gateway(self, request: web.Request) -> web.Response:
         supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
         users = await self.store.sql(
-            "SELECT * FROM users WHERE agent_token_hash=? AND status='running'", (digest(supplied),)
+            "SELECT * FROM users WHERE agent_token_hash=? AND status IN ('running','pausing')",
+            (digest(supplied),),
         )
         if not supplied or not users:
             raise web.HTTPUnauthorized()
         user = users[0]
         body = await request.json()
         service, now = body.get("service"), int(time.time())
+        if user["status"] == "pausing" and service != "dashboard":
+            raise web.HTTPUnauthorized()
         if service not in PORTS:
             raise web.HTTPBadRequest()
         if request.match_info["operation"] == "exchange":
@@ -578,12 +583,23 @@ class Hosting:
                 )
                 await self.store.sql("DELETE FROM service_tickets WHERE user_id=?", (user["id"],))
                 await self.store.sql("DELETE FROM service_sessions WHERE user_id=?", (user["id"],))
+                await self.store.sql(
+                    "DELETE FROM analytics_archives WHERE user_id=?", (user["id"],)
+                )
                 return
             if user["action"] == "pause":
+                archive_error = None
                 if user["instance"]:
                     await self.store.sql(
                         "UPDATE users SET stage='Saving work' WHERE id=?", (user["id"],)
                     )
+                    try:
+                        await self.analytics.capture(user)
+                    except Exception:
+                        logging.getLogger(__name__).exception("Could not archive paused analytics")
+                        archive_error = (
+                            "Swarm paused, but its latest dashboard history could not be saved."
+                        )
                     with contextlib.suppress(HostingError):
                         await self.cloud.command(
                             user["instance"],
@@ -597,8 +613,8 @@ class Hosting:
                         )
                     await self.cloud.request("POST", f"instances/{user['instance']}/stop")
                 await self.store.sql(
-                    "UPDATE users SET status='sleeping',action=NULL,stage='',error=NULL WHERE id=?",
-                    (user["id"],),
+                    "UPDATE users SET status='sleeping',action=NULL,stage='',error=? WHERE id=?",
+                    (archive_error, user["id"]),
                 )
                 return
             await self.store.sql(

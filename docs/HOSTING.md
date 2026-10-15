@@ -132,8 +132,8 @@ view and an authenticated WebSocket bridge. Provider settings, sign-out, and the
 operator's invitations live in Settings. The bridge reuses tenant SSO server-side;
 service cookies and infrastructure keys never enter browser JavaScript. Stream
 connection tickets are single-use, expire after 60 seconds, and bind to one portal
-session and tenant. Logout, pause, stop, and expiry revoke streaming access within
-five seconds. Avatar/activity requests recheck portal authentication and expose only
+session and tenant. Logout, stop, and expiry revoke streaming access within five seconds. Pause closes
+the live tenant stream and switches the portal to a saved read-only view. Avatar/activity requests recheck portal authentication and expose only
 fixed read-only endpoints. Native service links acquire SSO and retain their requested
 relative channel/repository destination.
 
@@ -157,3 +157,14 @@ provider and credential fingerprint. They are captured on first successful acces
 reused after restarts; a new reset or credential establishes a new baseline. Reports
 are cached for 60 seconds and may be delayed by providers. Key changes reload the
 embedded analytics stream without restarting agents or requiring a pause.
+
+
+Before powering down a paused VM, the control plane saves its dashboard snapshot,
+redacted agent histories (all pages), and avatars in encrypted SQLite storage. The
+portal can serve these without contacting or waking the tenant. Counts, billing,
+channel memberships and Git state reflect capture time; agent work indicators become
+Paused, while retired/blocked states remain visible. Current work is empty while paused.
+Native service links remain unavailable until Play. Resume restores live analytics;
+Stop deletes the archive with the tenant. An archive failure does not prevent a pause
+and is reported in the portal. Instances already asleep before this feature need one
+resume/pause cycle to capture their first snapshot.

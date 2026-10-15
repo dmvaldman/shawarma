@@ -340,6 +340,33 @@ class Analytics:
         service_links(data, self.settings)
         return data
 
+    async def archive(self, request: web.Request) -> web.Response:
+        """Export the same redacted owner data, including every cursor page, before sleep."""
+        data = await self.snapshot()
+        histories, avatars = {}, {}
+        for agent in data["agents"]:
+            agent_id = UUID(agent["id"])
+            page = await self.activity.read(agent_id)
+            events = list(page["events"])
+            cursor = page["next_cursor"]
+            while cursor:
+                older = await self.activity.read(agent_id, cursor)
+                events.extend(older["events"])
+                cursor = older["next_cursor"]
+            histories[agent["id"]] = {**page, "events": events, "next_cursor": None}
+            if agent.get("avatar_url"):
+                image = await self.store.pool.fetchval(
+                    "SELECT image FROM agent_avatars WHERE agent_id=$1", agent_id
+                )
+                if image:
+                    avatars[agent["id"]] = base64.b64encode(image).decode()
+        response = web.json_response(
+            {"data": data, "histories": histories, "avatars": avatars},
+            headers={"Cache-Control": "no-store"},
+        )
+        response.enable_compression()
+        return response
+
     async def avatar(self, request: web.Request) -> web.Response:
         try:
             agent = UUID(request.match_info["agent"])
@@ -448,6 +475,7 @@ class Analytics:
         app.on_shutdown.append(self.shutdown_streams)
         app.router.add_get("/", self.index)
         app.router.add_get("/api/stats", self.stats)
+        app.router.add_get("/api/archive", self.archive)
         app.router.add_get("/api/ws", self.websocket)
         app.router.add_get("/api/agents/{agent}/activity", self.activity.page)
         app.router.add_get("/api/agents/{agent}/avatar", self.avatar)

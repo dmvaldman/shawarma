@@ -20,16 +20,16 @@ $('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setI
 
 async function refresh(){try{
  user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
- const running=user.status==='running',transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
- for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running);
+ const running=user.status==='running',viewAnalytics=user.analytics_available||running,transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
+ for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running&&!(viewAnalytics&&section.querySelector('#analytics-frame')));
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
  $('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
  $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;$('duration').hidden=running;
  $('session-until').hidden=!running;$('session-until').textContent=running?'Swarm will pause at '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(user.run_until*1000)):'';$('provider-warning').hidden=hasProviders;
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
- $('workspace-empty').hidden=running;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
- const frame=$('analytics-frame');frame.hidden=!running;if(!running)$('activity-status').hidden=true;if(running&&!frame.getAttribute('src')){$('analytics-loading').hidden=false;frame.src='/api/analytics?resource=page';}else if(!running&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
+ $('workspace-empty').hidden=viewAnalytics;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
+ const frame=$('analytics-frame');frame.hidden=!viewAnalytics;if(!running)$('activity-status').hidden=true;if(viewAnalytics&&(!frame.getAttribute('src')||frame.dataset.mode!==user.status)){$('analytics-loading').hidden=false;frame.dataset.mode=user.status;frame.src='/api/analytics?resource=page&mode='+user.status;}else if(!viewAnalytics&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
  renderProviders();renderAdminKeys();showScreen();
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;

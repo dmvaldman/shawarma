@@ -168,3 +168,25 @@ async def test_opaque_reasoning_metadata_is_redacted_without_discarding_summary(
     assert payload["part"]["text"] == "Readable provider summary"
     assert payload["part"]["metadata"]["openai"]["reasoningEncryptedContent"] == "[redacted]"
     assert await store.pool.fetchval("SELECT summary FROM agent_activity") == "Reasoning summary"
+
+
+async def test_pause_archive_exports_all_pages_with_same_redaction(runtime_store, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    store, settings, agent, workspace = runtime_store
+    settings = settings.model_copy(update={"openai_api_key": SecretStr("archive-secret")})
+    capture = Activity(store, settings)
+    for i in range(105):
+        await capture.native(agent, {"session_id": str(i)}, output("Finding archive-secret", True))
+    api = Analytics(store, settings, workspace)
+    data = {"agents": [{"id": str(agent)}], "workspace": {}, "totals": {}}
+    monkeypatch.setattr(api, "snapshot", AsyncMock(return_value=data))
+    async with TestClient(TestServer(api.app())) as client:
+        response = await client.get("/api/archive")
+        assert response.status == 200
+        archive = await response.json()
+        events = archive["histories"][str(agent)]["events"]
+        assert len(events) == 105
+        assert len({event["sequence"] for event in events}) == 105
+        assert "archive-secret" not in json.dumps(archive)
+        assert "[redacted]" in json.dumps(archive)

@@ -640,3 +640,139 @@ async def test_admin_keys_are_separate_encrypted_and_never_sent_to_workers(hoste
         hosting.store.unseal(await hosting.store.user(row["id"]))["providers"]["openai"]
         == "private-inference-key"
     )
+
+
+async def test_pause_archives_private_paginated_history_without_waking_machine(hosted, monkeypatch):
+    import base64
+    from urllib.parse import urlsplit
+    from uuid import uuid4
+
+    from aiohttp import ClientSession
+
+    from harness.hosting.analytics_bridge import AnalyticsBridge
+
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    owner = (await client.get("/api/me", headers=headers)).json()
+    agent = str(uuid4())
+    archive = {
+        "data": {
+            "workspace": {"status": "active"},
+            "totals": {"working": 1, "output_tokens": 123},
+            "agents": [{"id": agent, "activity": "working", "working": True}],
+        },
+        "histories": {
+            agent: {
+                "agent": {"working": True},
+                "current": [{"summary": "experiment"}],
+                "events": [{"sequence": i, "summary": "private finding"} for i in range(65, 0, -1)],
+                "next_cursor": None,
+            }
+        },
+        "avatars": {agent: base64.b64encode(b"portrait").decode()},
+    }
+    native = web.Application()
+
+    async def export(request):
+        return web.json_response(archive)
+
+    native.router.add_get("/api/archive", export)
+    runner = web.AppRunner(native)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    try:
+        async with ClientSession() as upstream:
+            monkeypatch.setattr(
+                hosting.analytics,
+                "connection",
+                AsyncMock(
+                    return_value=(
+                        upstream,
+                        f"http://127.0.0.1:{site._server.sockets[0].getsockname()[1]}",
+                    )
+                ),
+            )
+            hosting.analytics.billing = None
+            await hosting.store.sql(
+                "UPDATE users SET status='pausing',action='pause',instance='node' WHERE id=?",
+                (owner["id"],),
+            )
+            await hosting.run_job(await hosting.store.user(owner["id"]))
+        stored = await hosting.store.sql("SELECT * FROM analytics_archives")
+        assert len(stored) == 1 and "private finding" not in stored[0]["vault"]
+        # A fresh bridge after platform restart can serve it with no tenant connection.
+        hosting.analytics = AnalyticsBridge(hosting.store, hosting.cloud, "https://broker.example")
+        hosting.cloud.request.reset_mock()
+        hosting.cloud.command.reset_mock()
+        me = (await client.get("/api/me", headers=headers)).json()
+        assert me["status"] == "sleeping" and me["analytics_available"]
+        assert (
+            await client.get("/api/analytics?resource=page", headers=headers)
+        ).status_code == 200
+        path = f"/api/analytics?resource=activity&agent={agent}"
+        pages = []
+        cursor = None
+        while True:
+            page = (
+                await client.get(path + (f"&before={cursor}" if cursor else ""), headers=headers)
+            ).json()
+            assert page["current"] == [] and not page["agent"]["working"]
+            pages.extend(e["sequence"] for e in page["events"])
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+        assert pages == list(range(65, 0, -1))
+        for suffix in ("&limit=101", "&before=-1", "&before=bad"):
+            assert (await client.get(path + suffix, headers=headers)).status_code == 400
+        assert (
+            await client.get(path.replace(agent, str(uuid4())), headers=headers)
+        ).status_code == 404
+        avatar = await client.get(f"/api/analytics?resource=avatar&agent={agent}", headers=headers)
+        assert avatar.content == b"portrait"
+        ticket = (await client.post("/api/dashboard-connect", json={}, headers=headers)).json()[
+            "url"
+        ]
+        async with ClientSession() as browser:
+            async with browser.ws_connect(
+                str(client.base_url).rstrip("/") + "/portal/analytics?" + urlsplit(ticket).query,
+                origin="https://swarm.forum",
+            ) as socket:
+                snapshot = (await socket.receive_json())["data"]
+                assert snapshot["totals"]["output_tokens"] == 123
+                assert snapshot["totals"]["working"] == 0
+                assert snapshot["agents"][0]["activity_label"] == "Paused"
+        other_code = await hosting.store.invite("Other")
+        other_headers = {"X-Swarm-Session": await login(client, other_code)}
+        await hosting.store.sql(
+            "UPDATE users SET status='sleeping',instance='node' WHERE name='Other'"
+        )
+        assert not (await client.get("/api/me", headers=other_headers)).json()[
+            "analytics_available"
+        ]
+        assert (await client.get(path, headers=other_headers)).status_code == 409
+        hosting.cloud.request.assert_not_called()
+        hosting.cloud.command.assert_not_called()
+        # Stop removes the previous run; a later fresh instance cannot see its archive.
+        await hosting.store.sql("UPDATE users SET action='stop' WHERE id=?", (owner["id"],))
+        await hosting.run_job(await hosting.store.user(owner["id"]))
+        assert not await hosting.store.sql("SELECT * FROM analytics_archives")
+    finally:
+        await runner.cleanup()
+
+
+async def test_archive_failure_does_not_prevent_pause_and_is_visible(hosted, monkeypatch):
+    hosting, client = hosted
+    token = await login(client, "owner-code")
+    owner = (await client.get("/api/me", headers={"X-Swarm-Session": token})).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='pausing',action='pause',instance='node' WHERE id=?",
+        (owner["id"],),
+    )
+    monkeypatch.setattr(
+        hosting.analytics, "capture", AsyncMock(side_effect=RuntimeError("offline"))
+    )
+    await hosting.run_job(await hosting.store.user(owner["id"]))
+    user = await hosting.store.user(owner["id"])
+    assert user["status"] == "sleeping" and "could not be saved" in user["error"]
+    hosting.cloud.request.assert_awaited_with("POST", "instances/node/stop")

@@ -47,6 +47,10 @@ class HostingStore:
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY(user_id,workspace_id,run_ms,provider,credential_hash)
                 );
+                CREATE TABLE IF NOT EXISTS analytics_archives (
+                    user_id TEXT PRIMARY KEY, instance TEXT NOT NULL,
+                    vault TEXT NOT NULL, captured_at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS oauth_flows (
                     state_hash TEXT PRIMARY KEY, browser_hash TEXT NOT NULL,
                     vault TEXT NOT NULL, expires INTEGER NOT NULL
