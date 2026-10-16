@@ -70,7 +70,7 @@ async def collect() -> dict[str, Any]:
             "SELECT json_build_object('count',count(*),'last_at',max(createat)/1000) "
             "FROM posts WHERE message NOT LIKE '**Harness log**%' AND userid='"
             + owner
-            + "' AND deleteat=0 AND type='' AND createat>="
+            + "' AND type='' AND createat>="
             + str(data["workspace"]["run_ms"])
         )
         try:
@@ -173,8 +173,14 @@ async def checkpoint(reset_id: str) -> None:
     if not any(item.get("reset_id") == reset_id for item in pending):
         pending.append(data)
     path = Path(".state/usage-checkpoints.json")
-    await asyncio.to_thread(path.write_text, json.dumps(pending[-100:]))
-    await asyncio.to_thread(path.chmod, 0o600)
+
+    def save_pending() -> None:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(pending[-100:]))
+        temporary.chmod(0o600)
+        temporary.replace(path)
+
+    await asyncio.to_thread(save_pending)
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(
             str(env["HOSTED_GATEWAY_BROKER_URL"]) + "/telemetry",

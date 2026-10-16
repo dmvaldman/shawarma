@@ -183,7 +183,7 @@ async function renderUsage(force=false){
  }
  const body=$('usage-runs');body.replaceChildren();
  for(const r of rows){const tr=usageNode('tr'),t=r.totals,duration=r.duration_seconds===null?'Unknown start':Math.round(r.duration_seconds/60)+' min';
-  for(const text of [(names.get(r.user_id)||'User')+'\n'+(r.imported?'Imported totals':usageDate(r.started_at||r.requested_at)),(r.end_reason||'Running')+'\n'+duration,usageNumber(t.agents_created)+' / '+r.peak_agents,usageNumber(t.human_messages)+' / '+usageNumber(t.messages),usageNumber(t.input_tokens)+' / '+usageNumber(t.cached_input_tokens)+' / '+usageNumber(t.output_tokens),usageNumber(t.issues),usageNumber(t.prs)+' / '+usageNumber(t.merged_prs),usageNumber(t.commits)]){
+  for(const text of [(names.get(r.user_id)||'User')+'\n'+(r.imported?'Imported totals':usageDate(r.started_at||r.requested_at)),(r.end_reason||'Running').replaceAll('_',' ')+'\n'+duration,usageNumber(t.agents_created)+' / '+r.peak_agents,usageNumber(t.human_messages)+' / '+usageNumber(t.messages),usageNumber(t.input_tokens)+' / '+usageNumber(t.cached_input_tokens)+' / '+usageNumber(t.output_tokens),usageNumber(t.issues),usageNumber(t.prs)+' / '+usageNumber(t.merged_prs),usageNumber(t.commits)]){
    const td=usageNode('td',text);td.style.whiteSpace='pre-line';tr.append(td);
   }body.append(tr);
  }

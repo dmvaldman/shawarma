@@ -765,6 +765,7 @@ class Hosting:
         owner = await self.store.sql("SELECT id FROM users WHERE role=?", ("admin",))
         if not owner:
             await self.store.invite("David", "admin", self.owner_code)
+        await self.usage.import_saved()
         self.runner = asyncio.create_task(self.jobs())
 
     async def cleanup(self, app: web.Application) -> None:

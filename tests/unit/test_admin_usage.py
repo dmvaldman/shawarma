@@ -87,3 +87,34 @@ async def test_never_wakes_a_paused_machine_for_sampling(usage):
     await ledger.store.sql("UPDATE users SET status='sleeping' WHERE id=?", (user["id"],))
     await ledger.sample(user)
     ledger.cloud.command.assert_not_called()
+
+
+async def test_saved_pause_import_never_exports_contents_or_wakes_tenant(usage):
+    ledger, user = usage
+    await ledger.store.sql("UPDATE users SET status='sleeping' WHERE id=?", (user["id"],))
+    archive = {
+        "data": {
+            "workspace": {"id": "workspace", "run_ms": 1000},
+            "totals": {
+                "agents": 1,
+                "agents_created": 2,
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "messages": 5,
+            },
+            "agents": [{"model_id": "openai:test", "state": "IDLE"}],
+        },
+        "histories": {"secret": "PRIVATE HUMAN MESSAGE"},
+    }
+    await ledger.store.sql(
+        "INSERT INTO analytics_archives VALUES(?,?,?,?)",
+        (user["id"], "node", ledger.store.seal(archive), int(time.time())),
+    )
+    await ledger.import_saved()
+    await ledger.import_saved()
+    report = await ledger.report()
+    assert len(report["runs"]) == 1
+    assert report["runs"][0]["totals"]["output_tokens"] == 20
+    assert report["runs"][0]["totals"]["issues"] is None
+    assert "PRIVATE HUMAN" not in json.dumps(report)
+    ledger.cloud.command.assert_not_called()

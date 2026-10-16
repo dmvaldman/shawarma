@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import logging
 import secrets
 import shlex
 import sqlite3
@@ -34,6 +35,37 @@ class AdminUsage:
         self.tasks: dict[str, asyncio.Task[None]] = {}
         self.due: dict[str, float] = {}
         self.locks: dict[str, asyncio.Lock] = {}
+
+    async def import_saved(self) -> None:
+        """Use existing saved counters for sleeping users without waking their machines."""
+        rows = await self.store.sql(
+            "SELECT u.id,u.instance,u.status,a.vault,a.captured_at FROM users u "
+            "JOIN analytics_archives a ON a.user_id=u.id AND a.instance=u.instance "
+            "WHERE u.status='sleeping' AND NOT EXISTS "
+            "(SELECT 1 FROM usage_latest l WHERE l.user_id=u.id)"
+        )
+        for row in rows:
+            try:
+                archive = self.store.unseal(row)
+                data = archive["data"]
+                totals = data["totals"]
+                await self.ingest(
+                    row,
+                    {
+                        "epoch": str(data["workspace"]["id"])
+                        + ":"
+                        + str(data["workspace"]["run_ms"]),
+                        "at": row["captured_at"],
+                        "counters": {k: totals.get(k) for k in COUNTERS},
+                        "agents": totals.get("agents"),
+                        "models": sorted({a["model_id"] for a in data["agents"]}),
+                        "blocked": sum(a["state"] == "QUOTA_BLOCKED" for a in data["agents"]),
+                        "failed": sum(a["state"] == "FAILED" for a in data["agents"]),
+                    },
+                )
+                await self.finish(row, "saved_snapshot")
+            except Exception:
+                logging.getLogger(__name__).warning("Saved usage metadata could not be imported")
 
     async def begin(self, user: dict[str, Any], *, imported: bool = False) -> None:
         if await self.store.sql(
