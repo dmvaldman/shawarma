@@ -33,6 +33,7 @@ async function refresh(){try{
  renderProviders();renderAdminKeys();showScreen();
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;
+ await followSharedLink();
  }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');document.querySelector('main').classList.remove('is-account');}else error(e);}}
 
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',deepseek:'DeepSeek'};
@@ -79,6 +80,24 @@ window.addEventListener('message',event=>{if(event.origin===location.origin&&eve
 $('invite-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{const data=await api('invite',{name:$('friend-name').value});$('invite-result').replaceChildren();const input=document.createElement('input');input.readOnly=true;input.value=data.url;input.addEventListener('click',()=>input.select());const note=document.createElement('p');note.className='small';note.textContent='This link grants access to their workspace. Share it privately.';$('invite-result').append(input,note);});});
 const params=new URLSearchParams(location.hash.slice(1)),code=params.get('invite');
 if(code){sessionStorage.setItem('swarm-invite',code);history.replaceState(null,'',location.pathname);}
+const sharedService=params.get('open');
+if(sharedService){
+ if(['mattermost','gitea','opencode','dashboard'].includes(sharedService)&&/^[a-z0-9]+$/.test(params.get('instance')||'')){
+  sessionStorage.setItem('swarm-open',JSON.stringify({service:sharedService,instance:params.get('instance'),path:params.get('path')||'/'}));
+ }
+ history.replaceState(null,'',location.pathname);
+}
+let followingSharedLink=false;
+async function followSharedLink(){
+ if(!user?.activated||user.status!=='running'||followingSharedLink)return;
+ const pending=sessionStorage.getItem('swarm-open');if(!pending)return;
+ followingSharedLink=true;sessionStorage.removeItem('swarm-open');
+ try{
+  const data=await api('open',JSON.parse(pending));const url=new URL(data.url);
+  if(url.protocol!=='https:'||!url.hostname.endsWith('.agent37.app'))throw new Error('Invalid service URL.');
+  location.assign(url.href);
+ }catch(e){followingSharedLink=false;error(e);}
+}
 async function initialize(){await refresh();const pending=sessionStorage.getItem('swarm-invite');if(user&&!user.activated&&pending){$('invite-code').value=pending;await action(async()=>{await api('redeem',{code:pending});sessionStorage.removeItem('swarm-invite');$('invite-code').value='';});}else if(user?.activated){sessionStorage.removeItem('swarm-invite');}}
 initialize();setInterval(()=>{if(user&&!busy)refresh();},5000);
 

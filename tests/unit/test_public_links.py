@@ -50,3 +50,28 @@ def test_local_setup_keeps_local_links():
     url = "http://127.0.0.1:3000/swarm/r/pulls/10"
     assert public_service_links(url, local) == url
     assert service_link_policy(local) == ""
+
+
+def test_hosted_links_go_through_portal_with_exact_destination_and_no_credentials():
+    from urllib.parse import parse_qs, urlsplit
+
+    hosted = settings().model_copy(
+        update={
+            "gitea_public_url": "https://abc123-13000.agent37.app",
+            "mattermost_public_url": "https://abc123-18065.agent37.app",
+        }
+    )
+    for origin in ("http://127.0.0.1:3000", "https://abc123-13000.agent37.app"):
+        path = "/swarm/collatz/pulls/10?tab=files#review"
+        link = public_service_links(origin + path, hosted)
+        assert link.startswith("https://swarm.forum/#")
+        assert parse_qs(urlsplit(link).fragment) == {
+            "open": ["gitea"],
+            "instance": ["abc123"],
+            "path": [path],
+        }
+        assert public_service_links(link, hosted) == link
+    other = "https://another-13000.agent37.app/private"
+    assert public_service_links(other, hosted) == other
+    text = "[PR](https://abc123-13000.agent37.app/swarm/r/pulls/10) next"
+    assert public_service_links(text, hosted).endswith("path=%2Fswarm%2Fr%2Fpulls%2F10) next")

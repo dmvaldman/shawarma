@@ -168,3 +168,12 @@ Native service links remain unavailable until Play. Resume restores live analyti
 Stop deletes the archive with the tenant. An archive failure does not prevent a pause
 and is reported in the portal. Instances already asleep before this feature need one
 resume/pause cycle to capture their first snapshot.
+
+
+Shared hosted service links route through a portal fragment carrying only the service,
+instance ID and relative destination. The signed-in portal obtains a fresh edge access
+URL and a short-lived native SSO ticket; cross-tenant destinations are rejected. The
+pending destination survives Google sign-in in session storage. Mattermost's gateway
+adds a same-origin script that rewrites existing cross-service anchors as they render,
+so old messages also work without modifying their stored contents. Native URLs and
+Git/API transport remain unchanged; link access still requires the owning portal account.

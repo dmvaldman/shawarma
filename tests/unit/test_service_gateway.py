@@ -38,6 +38,10 @@ async def gateway(service, monkeypatch):
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 response.set_cookie("MMAUTHTOKEN", "native-session", httponly=True)
             return response
+        if request.path == "/page":
+            return web.Response(
+                text="<html><head></head><body>Chat</body></html>", content_type="text/html"
+            )
         if request.path == "/socket":
             ws = web.WebSocketResponse()
             await ws.prepare(request)
@@ -153,3 +157,18 @@ async def test_service_login_redirects_only_to_relative_native_destination(monke
                 allow_redirects=False,
             )
             assert response.status == 400
+
+
+async def test_mattermost_pages_load_authenticated_link_rewriter(monkeypatch):
+    async with gateway("mattermost", monkeypatch) as (browser, observed):
+        assert (await browser.get("/__swarm/links.js")).status == 401
+        headers = {"Cookie": "__Host-swarm_access=service-session", "Accept": "text/html"}
+        response = await browser.get("/page", headers=headers)
+        assert response.status == 200
+        assert '<script src="/__swarm/links.js" defer></script>' in await response.text()
+        assert response.headers["Cache-Control"] == "no-store"
+        assert observed[-1].headers["Accept-Encoding"] == "identity"
+        script = await browser.get("/__swarm/links.js", headers=headers)
+        assert script.status == 200
+        assert "MutationObserver" in await script.text()
+        assert "swarm.forum/#" in await script.text()

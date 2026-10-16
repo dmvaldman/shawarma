@@ -2,6 +2,7 @@
 
 import re
 from typing import Any
+from urllib.parse import urlencode, urlsplit
 
 from harness.config import Settings
 
@@ -26,11 +27,45 @@ def public_service_links(text: str, settings: Settings) -> str:
     if not replacements:
         return text
     pattern = "|".join(re.escape(url) for url in sorted(replacements, key=len, reverse=True))
-    return re.sub(
+    text = re.sub(
         r"(?<![\w/])(?:" + pattern + r")(?=[/?#\s)\]>`]|$)",
         lambda match: replacements[match[0]],
         text,
     )
+    return portal_service_links(text, settings)
+
+
+def portal_service_links(text: str, settings: Settings) -> str:
+    """Shared hosted links acquire fresh edge access and native SSO through the portal."""
+    for service, public, port in (
+        ("mattermost", settings.mattermost_public_url, 18065),
+        ("gitea", settings.gitea_public_url, 13000),
+        ("opencode", settings.opencode_public_url, 14096),
+        ("dashboard", settings.analytics_public_url, 18066),
+    ):
+        if not public:
+            continue
+        base = public.rstrip("/")
+        parsed = urlsplit(base)
+        host = re.fullmatch(r"([a-z0-9]+)-" + str(port) + r"\.agent37\.app", parsed.hostname or "")
+        if parsed.scheme != "https" or not host:
+            continue
+        instance = host[1]
+
+        def replace(match: re.Match[str], service: str = service, instance: str = instance) -> str:
+            path = match[1] or "/"
+            if not path.startswith("/"):
+                path = "/" + path
+            return "https://swarm.forum/#" + urlencode(
+                {"open": service, "instance": instance, "path": path}
+            )
+
+        text = re.sub(
+            r"(?<![\w/])" + re.escape(base) + r"(?=[/?#\s)\]>`]|$)([^\s<>`\"')\]]*)",
+            replace,
+            text,
+        )
+    return text
 
 
 def public_html_urls(data: Any, settings: Settings) -> Any:

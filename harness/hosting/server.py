@@ -276,6 +276,9 @@ class Hosting:
             service = body.get("service")
             if service not in PORTS or user["status"] != "running" or not user["instance"]:
                 raise web.HTTPConflict(text="Start your swarm before opening a service.")
+            target_instance = body.get("instance")
+            if target_instance is not None and target_instance != user["instance"]:
+                raise web.HTTPForbidden(text="This link belongs to a different swarm.")
             data = await self.cloud.request(
                 "POST",
                 f"instances/{user['instance']}/signed-url",

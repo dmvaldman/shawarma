@@ -9,6 +9,7 @@ import base64
 import contextlib
 import json
 import logging
+import re
 import time
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -207,6 +208,27 @@ class ServiceGateway:
         if request.path == "/__swarm/login" and request.method == "GET":
             return await self.login(request, service)
         await self.authorized(request, service)
+        if request.path == "/__swarm/links.js" and request.method == "GET":
+            services = []
+            for name, port in FRONT_PORTS.items():
+                public = str(
+                    self.env.get(
+                        "HOSTED_" + ("ANALYTICS" if name == "dashboard" else name.upper()) + "_URL",
+                        "",
+                    )
+                ).rstrip("/")
+                match = re.fullmatch(
+                    r"https://([a-z0-9]+)-" + str(port) + r"\.agent37\.app", public
+                )
+                if match:
+                    services.append({"name": name, "origin": public, "instance": match[1]})
+            script = "const swarmServices=" + json.dumps(services) + ";\n"
+            script += Path(__file__).with_name("service_links.js").read_text()
+            return web.Response(
+                text=script,
+                content_type="application/javascript",
+                headers={"Cache-Control": "no-store"},
+            )
         origin = request.headers.get("Origin")
         if (origin and origin != self.public_url(service)) or (
             request.method not in {"GET", "HEAD", "OPTIONS"} and not origin
@@ -214,6 +236,11 @@ class ServiceGateway:
             raise web.HTTPForbidden(text="Origin rejected.")
         target = "http://127.0.0.1:" + str(BACK_PORTS[service]) + request.rel_url.raw_path_qs
         headers = self.headers(request, service)
+        browser_page = service == "mattermost" and "text/html" in request.headers.get("Accept", "")
+        if browser_page:
+            headers["Accept-Encoding"] = "identity"
+            headers.pop("If-None-Match", None)
+            headers.pop("If-Modified-Since", None)
         if request.headers.get("Upgrade", "").lower() == "websocket":
             return await self.socket(request, service, target, headers)
         # Stream request and response bodies; never buffer uploads or SSE in the gateway.
@@ -224,6 +251,27 @@ class ServiceGateway:
             data=request.content.iter_chunked(64 * 1024) if request.can_read_body else None,
             allow_redirects=False,
         ) as upstream:
+            if (
+                browser_page
+                and upstream.status == 200
+                and upstream.content_type == "text/html"
+                and not upstream.headers.get("Content-Encoding")
+            ):
+                body = await upstream.text()
+                body = body.replace(
+                    "</head>", '<script src="/__swarm/links.js" defer></script></head>', 1
+                )
+                response_headers = {
+                    k: v
+                    for k, v in upstream.headers.items()
+                    if k.lower()
+                    not in HOP | {"set-cookie", "content-length", "etag", "content-type"}
+                }
+                response_headers["Cache-Control"] = "no-store"
+                response_headers["Referrer-Policy"] = "no-referrer"
+                html = web.Response(text=body, content_type="text/html", headers=response_headers)
+                self.cookies(html, upstream.headers.getall("Set-Cookie", []))
+                return html
             response = web.StreamResponse(status=upstream.status)
             for key, value in upstream.headers.items():
                 if key.lower() not in HOP | {"set-cookie", "content-length"}:

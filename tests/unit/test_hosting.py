@@ -799,3 +799,19 @@ async def test_short_invites_redeem_and_old_long_codes_still_work(hosted):
     await hosting.store.invite("Legacy", code=legacy)
     legacy_headers = {"X-Swarm-Session": await login(client, legacy)}
     assert (await client.get("/api/me", headers=legacy_headers)).json()["name"] == "Legacy"
+
+
+async def test_shared_service_links_cannot_target_another_tenant(hosted):
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    me = (await client.get("/api/me", headers=headers)).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='own-node' WHERE id=?", (me["id"],)
+    )
+    response = await client.post(
+        "/api/open",
+        headers=headers,
+        json={"service": "gitea", "instance": "another-node", "path": "/swarm/r/pulls/10"},
+    )
+    assert response.status_code == 403
+    hosting.cloud.request.assert_not_called()
