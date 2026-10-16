@@ -104,7 +104,7 @@ class ServiceGateway:
                 "http://127.0.0.1:" + str(BACK_PORTS["mattermost"]) + "/api/v4/users/login",
                 headers={"X-Requested-With": "XMLHttpRequest", "X-Forwarded-Proto": "https"},
                 json={
-                    "login_id": "owner",
+                    "login_id": "owner@swarm.invalid",
                     "password": self.env["HOSTED_OWNER_PASSWORD"],
                 },
                 timeout=ClientTimeout(total=30),

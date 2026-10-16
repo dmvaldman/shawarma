@@ -32,7 +32,10 @@ async def gateway(service, monkeypatch):
     async def backend(request):
         observed.append(request)
         if request.path == "/api/v4/users/login":
-            assert await request.json() == {"login_id": "owner", "password": "native-mm-password"}
+            assert await request.json() == {
+                "login_id": "owner@swarm.invalid",
+                "password": "native-mm-password",
+            }
             response = web.json_response({"id": "owner-id"})
             # Mattermost only attaches browser cookies for an XMLHttpRequest login.
             if request.headers.get("X-Requested-With") == "XMLHttpRequest":

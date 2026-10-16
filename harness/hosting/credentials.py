@@ -11,7 +11,7 @@ if __name__ == "__main__":
     print(
         json.dumps(
             {
-                "mattermost_username": "owner",
+                "mattermost_username": env.get("HOSTED_OWNER_USERNAME") or "owner",
                 "mattermost_password": env["HOSTED_OWNER_PASSWORD"],
                 "gitea_username": "swarm-owner",
                 "gitea_password": state["admin_password"],

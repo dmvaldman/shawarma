@@ -540,6 +540,7 @@ class Hosting:
             "ANTHROPIC_API_KEY": token if vault["providers"].get("anthropic") else "",
             "DEEPSEEK_API_KEY": token if vault["providers"].get("deepseek") else "",
             "HOSTED_OWNER_PASSWORD": vault["mattermost_password"],
+            "HOSTED_OWNER_NAME": json.dumps(user["name"], ensure_ascii=True),
             "HOSTED_MATTERMOST_URL": prefix + str(PORTS["mattermost"]) + ".agent37.app",
             "HOSTED_GITEA_URL": prefix + str(PORTS["gitea"]) + ".agent37.app",
             "HOSTED_OPENCODE_URL": prefix + str(PORTS["opencode"]) + ".agent37.app",

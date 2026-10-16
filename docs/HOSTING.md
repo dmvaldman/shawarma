@@ -177,3 +177,10 @@ pending destination survives Google sign-in in session storage. Mattermost's gat
 adds a same-origin script that rewrites existing cross-service anchors as they render,
 so old messages also work without modifying their stored contents. Native URLs and
 Git/API transport remain unchanged; link access still requires the owning portal account.
+
+
+Human profiles use the portal account name: Mattermost receives a readable unique
+handle, first/last name and nickname, while Gitea receives the full display name.
+Mattermost SSO logs in using the stable private email rather than a mutable handle.
+Owner IDs, history and permissions remain intact. Gitea's internal administrative
+login remains stable; hosted pages prefer full display names where supported.
