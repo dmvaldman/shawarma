@@ -32,7 +32,6 @@ async function refresh(){try{
  const frame=$('analytics-frame');frame.hidden=!viewAnalytics;if(!running)$('activity-status').hidden=true;if(viewAnalytics&&(!frame.getAttribute('src')||frame.dataset.mode!==user.status)){$('analytics-loading').hidden=false;frame.dataset.mode=user.status;frame.src='/api/analytics?resource=page&mode='+user.status;}else if(!viewAnalytics&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
  renderProviders();renderAdminKeys();showScreen();
  if(location.hash==='#admin'&&user.role==='admin')await renderUsage();
- if(location.hash==='#settings')await renderSupportAccess();
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;
  await followSharedLink();
@@ -152,7 +151,7 @@ const usageDate=value=>value?new Date(value*1000).toLocaleString(): '—';
 function usageNode(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 $('usage-open').addEventListener('click',()=>{location.hash='admin';showScreen();renderUsage(true).catch(error);});
 $('usage-back').addEventListener('click',closeSettings);
-window.addEventListener('hashchange',()=>{if(location.hash==='#admin'&&user?.role==='admin')renderUsage(true).catch(error);if(location.hash==='#settings'&&user?.activated)renderSupportAccess().catch(error);});
+window.addEventListener('hashchange',()=>{if(location.hash==='#admin'&&user?.role==='admin')renderUsage(true).catch(error);});
 async function renderUsage(force=false){
  if(!force&&Date.now()-usageUpdated<15000)return;usageUpdated=Date.now();
  const data=await api('admin-usage');if(user?.role!=='admin')return;
@@ -188,12 +187,6 @@ async function renderUsage(force=false){
   }body.append(tr);
  }
 }
-async function renderSupportAccess(){
- const data=await api('support-access');$('support-grant').disabled=!user?.instance_id;$('support-status').textContent=data.expires?'Granted until '+usageDate(data.expires):'Not granted';$('support-revoke').hidden=!data.expires;$('support-grant').hidden=Boolean(data.expires);
- $('support-audit').replaceChildren(...data.audit.map(item=>usageNode('li',usageDate(item.at)+' · '+item.action.replaceAll('_',' '))));
-}
-$('support-grant').addEventListener('click',()=>action(async()=>{await api('support-access',{grant:true});await renderSupportAccess();}));
-$('support-revoke').addEventListener('click',()=>action(async()=>{await api('support-access',{grant:false});await renderSupportAccess();}));
 function openSupportView(u){supportTarget=u;supportPage=1;$('support-title').textContent=u.name+' · Read-only support';$('support-banner').textContent='Viewing as David · Granted by '+u.name+' until '+usageDate(u.support_until);$('support-kind').value='channels';$('support-choice').hidden=true;$('support-repo-kind').hidden=true;$('support-path').hidden=true;$('support-content').replaceChildren();$('support-view').showModal();loadSupport(true).catch(error);}
 $('support-close').addEventListener('click',()=>$('support-view').close());
 $('support-view').addEventListener('close',()=>{supportTarget=null;$('support-content').replaceChildren();});
