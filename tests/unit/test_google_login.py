@@ -38,7 +38,7 @@ async def callback_input(login, session):
     }
 
 
-async def test_google_requires_invite_then_links_stable_subject_and_retains_invite(
+async def test_google_requires_invite_then_links_stable_subject_and_retires_invite(
     google, monkeypatch
 ):
     login, owner = google
@@ -53,7 +53,8 @@ async def test_google_requires_invite_then_links_stable_subject_and_retains_invi
         await login.complete({**linked, "browser_token": "wrong-browser"})
     token = await login.complete(linked)
     assert (await login.store.user(owner))["google_subject"] == "stable-google-subject"
-    assert (await login.store.user(owner))["login_hash"] == digest("invited-owner")
+    assert (await login.store.user(owner))["login_hash"] != digest("invited-owner")
+    assert (await login.store.user(owner))["invite_revoked"]
     assert (
         await login.store.sql("SELECT user_id FROM sessions WHERE token_hash=?", (digest(token),))
     )[0]["user_id"] == owner

@@ -51,6 +51,32 @@ class HostingStore:
                     user_id TEXT PRIMARY KEY, instance TEXT NOT NULL,
                     vault TEXT NOT NULL, captured_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS hosted_runs (
+                    id TEXT PRIMARY KEY,user_id TEXT NOT NULL,requested_at INTEGER NOT NULL,
+                    started_at INTEGER,ended_at INTEGER,end_reason TEXT,imported INTEGER DEFAULT 0,
+                    peak_agents INTEGER NOT NULL DEFAULT 0,last_sample INTEGER
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS one_active_run ON hosted_runs(user_id)
+                    WHERE ended_at IS NULL;
+                CREATE TABLE IF NOT EXISTS hosted_run_segments (
+                    run_id TEXT NOT NULL,epoch TEXT NOT NULL,baseline TEXT NOT NULL,
+                    latest TEXT NOT NULL,
+                    PRIMARY KEY(run_id,epoch)
+                );
+                CREATE TABLE IF NOT EXISTS usage_latest (
+                    user_id TEXT PRIMARY KEY,instance TEXT,snapshot TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,unavailable INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS telemetry_receipts (
+                    user_id TEXT NOT NULL,reset_id TEXT NOT NULL,PRIMARY KEY(user_id,reset_id)
+                );
+                CREATE TABLE IF NOT EXISTS support_grants (
+                    user_id TEXT PRIMARY KEY,expires INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS support_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,action TEXT NOT NULL,at INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS oauth_flows (
                     state_hash TEXT PRIMARY KEY, browser_hash TEXT NOT NULL,
                     vault TEXT NOT NULL, expires INTEGER NOT NULL
@@ -61,6 +87,20 @@ class HostingStore:
                 conn.execute("ALTER TABLE users ADD COLUMN google_subject TEXT")
             if "activated" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN activated INTEGER NOT NULL DEFAULT 1")
+            if "last_seen" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN last_seen INTEGER")
+            if "invite_revoked" not in columns:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN invite_revoked INTEGER NOT NULL DEFAULT 0"
+                )
+                # Previously linked invite codes were reusable login credentials.
+                for row in conn.execute(
+                    "SELECT id FROM users WHERE google_subject IS NOT NULL AND activated=1"
+                ):
+                    conn.execute(
+                        "UPDATE users SET login_hash=?,invite_revoked=1 WHERE id=?",
+                        (digest(secrets.token_urlsafe(32)), row[0]),
+                    )
             conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS google_subject ON users(google_subject)"
             )
@@ -145,14 +185,15 @@ class HostingStore:
                 ).fetchone()
                 if not source or source["activated"] or not source["google_subject"]:
                     raise ValueError("This account already has access.")
-                if not target or target["google_subject"]:
+                if not target or target["google_subject"] or target["invite_revoked"]:
                     raise ValueError("Invalid or already claimed invite code.")
                 # Move authenticated sessions; preserve the invited workspace's ID and vault.
                 conn.execute("UPDATE users SET google_subject=NULL WHERE id=?", (user_id,))
                 conn.execute(
-                    "UPDATE users SET google_subject=? WHERE id=?",
-                    (source["google_subject"], target["id"]),
+                    "UPDATE users SET google_subject=?,login_hash=?,invite_revoked=1 WHERE id=?",
+                    (source["google_subject"], digest(secrets.token_urlsafe(32)), target["id"]),
                 )
+                conn.execute("DELETE FROM sessions WHERE user_id=?", (target["id"],))
                 conn.execute(
                     "UPDATE sessions SET user_id=? WHERE user_id=?", (target["id"], user_id)
                 )

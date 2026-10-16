@@ -17,6 +17,8 @@ from aiohttp import web
 
 from harness.api.billing import read_provider_cost
 from harness.config import Settings
+from harness.hosting.admin import AdminUsage
+from harness.hosting.admin_api import handle as admin_handle
 from harness.hosting.analytics_bridge import AnalyticsBridge
 from harness.hosting.billing import ADMIN_PROVIDERS, HostedBilling, billing_headers
 from harness.hosting.cloud import Cloud, HostingError
@@ -54,6 +56,7 @@ class Hosting:
         self.google = GoogleLogin(store, google_client_id, google_client_secret)
         self.billing = HostedBilling(store, PROVIDERS)
         self.analytics = AnalyticsBridge(store, cloud, public_url, self.billing)
+        self.usage = AdminUsage(store, cloud)
         self.catalogs: dict[str, tuple[str, ModelCatalog]] = {}
         self.runner: asyncio.Task[None] | None = None
         self.stopping = False
@@ -89,6 +92,10 @@ class Hosting:
         )
         if not rows:
             raise web.HTTPUnauthorized(text="Sign in to continue.")
+        await self.store.sql(
+            "UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)",
+            (int(time.time()), rows[0]["id"], int(time.time()) - 60),
+        )
         return rows[0]
 
     async def api(self, request: web.Request) -> web.Response:
@@ -114,7 +121,11 @@ class Hosting:
             self.login_attempts[client_ip] = attempts + [now]
             body = await request.json()
             code = str(body.get("code", ""))
-            rows = await self.store.sql("SELECT * FROM users WHERE login_hash=?", (digest(code),))
+            rows = await self.store.sql(
+                "SELECT * FROM users WHERE login_hash=? AND invite_revoked=0 AND "
+                "(google_subject IS NULL OR activated=0)",
+                (digest(code),),
+            )
             if not rows:
                 raise web.HTTPUnauthorized(text="Invalid invite link.")
             session = secrets.token_urlsafe(32)
@@ -170,6 +181,8 @@ class Hosting:
             return web.json_response({"ok": True})
         if not user["activated"]:
             raise web.HTTPForbidden(text="Enter an invite code to unlock your swarm.")
+        if route in {"admin-usage", "admin-invite", "admin-content", "support-access"}:
+            return await admin_handle(self.usage, request, user)
         if request.method == "GET" and route == "analytics":
             return await self.analytics.resource(request, user)
         if request.method == "POST" and route == "dashboard-connect":
@@ -255,6 +268,7 @@ class Hosting:
                         "UPDATE users SET run_until=? WHERE id=?", (deadline, user["id"])
                     )
                 else:
+                    await self.usage.begin(user)
                     await self.store.sql(
                         "UPDATE users SET action='start',status='queued',error=NULL,run_until=?"
                         " WHERE id=?",
@@ -331,6 +345,20 @@ class Hosting:
             if provider == "anthropic"
             else {"Authorization": "Bearer " + key}
         )
+
+    async def telemetry(self, request: web.Request) -> web.Response:
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        users = await self.store.sql(
+            "SELECT * FROM users WHERE agent_token_hash=? "
+            "AND status IN ('running','pausing','stopping')",
+            (digest(token),),
+        )
+        if not token or not users:
+            raise web.HTTPUnauthorized()
+        async with self.usage.locks.setdefault(users[0]["id"], asyncio.Lock()):
+            await self.usage.checkpoint(users[0], await request.json())
+            await self.store.sql("DELETE FROM support_grants WHERE user_id=?", (users[0]["id"],))
+        return web.json_response({"ok": True})
 
     async def gateway(self, request: web.Request) -> web.Response:
         supplied = request.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -565,12 +593,25 @@ class Hosting:
                         self.operations[user["id"]] = asyncio.create_task(self.run_job(user))
             except Exception:
                 logger.warning("Hosting job queue unavailable")
+            try:
+                await self.usage.tick()
+            except Exception:
+                logger.warning("Usage sampler unavailable; it will retry")
             await asyncio.sleep(5)
 
     async def run_job(self, user: dict[str, Any]) -> None:
         try:
             if user["action"] == "stop":
                 if user["instance"]:
+                    if await self.store.sql(
+                        "SELECT id FROM hosted_runs WHERE user_id=? AND ended_at IS NULL",
+                        (user["id"],),
+                    ):
+                        with contextlib.suppress(HostingError):
+                            await self.cloud.command(
+                                user["instance"], "docker stop --time 60 swarm-controller"
+                            )
+                        await self.usage.sample(user, offline=True)
                     try:
                         await self.cloud.request("DELETE", f"instances/{user['instance']}")
                     except HostingError as error:
@@ -584,6 +625,12 @@ class Hosting:
                     "UPDATE users SET instance=NULL,creating=0,status='stopped',action=NULL,"
                     "stage='',error=NULL,run_until=NULL,vault=?,agent_token_hash=? WHERE id=?",
                     (self.store.seal(vault), digest(vault["agent_token"]), user["id"]),
+                )
+                await self.usage.finish(user, "stopped")
+                await self.store.sql("DELETE FROM support_grants WHERE user_id=?", (user["id"],))
+                await self.store.sql(
+                    "INSERT INTO support_audit(user_id,actor_id,action,at) VALUES(?,?,?,?)",
+                    (user["id"], user["id"], "swarm_stopped", int(time.time())),
                 )
                 await self.store.sql("DELETE FROM service_tickets WHERE user_id=?", (user["id"],))
                 await self.store.sql("DELETE FROM service_sessions WHERE user_id=?", (user["id"],))
@@ -606,6 +653,11 @@ class Hosting:
                         )
                     with contextlib.suppress(HostingError):
                         await self.cloud.command(
+                            user["instance"], "docker stop --time 60 swarm-controller"
+                        )
+                    await self.usage.sample(user, offline=True)
+                    with contextlib.suppress(HostingError):
+                        await self.cloud.command(
                             user["instance"],
                             "docker stop --time 60 swarm-service-gateway swarm-controller; "
                             "cd /root/swarm/app; "
@@ -620,6 +672,7 @@ class Hosting:
                     "UPDATE users SET status='sleeping',action=NULL,stage='',error=? WHERE id=?",
                     (archive_error, user["id"]),
                 )
+                await self.usage.finish(user, "time_limit" if user.get("run_until") else "paused")
                 return
             await self.store.sql(
                 "UPDATE users SET status='provisioning',stage='Starting your machine' WHERE id=?",
@@ -667,6 +720,12 @@ class Hosting:
                 (user["id"],),
             )
             await self.install(user)
+            await self.usage.begin(user)
+            await self.store.sql(
+                "UPDATE hosted_runs SET started_at=? WHERE user_id=? AND ended_at IS NULL AND "
+                "started_at IS NULL AND imported=0",
+                (int(time.time()), user["id"]),
+            )
             await self.store.sql(
                 "UPDATE users SET status='running',stage='',action=NULL,error=NULL WHERE id=?",
                 (user["id"],),
@@ -695,6 +754,7 @@ class Hosting:
                 "UPDATE users SET status='failed',action=NULL,error=? WHERE id=?",
                 (message, user["id"]),
             )
+            await self.usage.finish(user, "setup_failed")
             logger.warning(
                 "Hosted workspace %s setup failed (%s)",
                 user["id"],
@@ -710,6 +770,7 @@ class Hosting:
     async def cleanup(self, app: web.Application) -> None:
         self.stopping = True
         await self.analytics.close()
+        await self.usage.close()
         tasks = list(self.operations.values())
         if self.runner:
             tasks.append(self.runner)
@@ -743,6 +804,7 @@ class Hosting:
         app.router.add_post("/gateway/{operation}", self.gateway)
         app.router.add_get("/health", self.health)
         app.router.add_get("/portal/analytics", self.analytics.socket)
+        app.router.add_post("/telemetry", self.telemetry)
         app.on_startup.append(self.startup)
         app.on_cleanup.append(self.cleanup)
         return app

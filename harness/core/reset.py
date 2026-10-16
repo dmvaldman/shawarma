@@ -128,6 +128,14 @@ async def finish_reset(store: Store, settings: Settings, path: Path) -> dict[str
 
     # Workers have been drained by Supervisor before this call. Failed access never blocks reset.
     await Billing(store, settings).snapshot(workspace, int(plan["created_ms"]))
+    import logging
+
+    from harness.hosting.telemetry import checkpoint as usage_checkpoint
+
+    try:
+        await usage_checkpoint(plan["request_id"])
+    except Exception:
+        logging.getLogger(__name__).warning("Run metrics could not be checkpointed before reset")
     await reset_services(store, settings, state, path)
     await purge(store, workspace, state)
     fresh = {

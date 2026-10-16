@@ -159,7 +159,12 @@ class GoogleLogin:
                 )
             # Unique index also protects simultaneous attempts to link the same identity.
             await self.store.sql(
-                "UPDATE users SET google_subject=? WHERE id=?", (subject, users[0]["id"])
+                "UPDATE users SET google_subject=?,login_hash=?,invite_revoked=1 WHERE id=?",
+                (subject, digest(secrets.token_urlsafe(32)), users[0]["id"]),
+            )
+            await self.store.sql(
+                "DELETE FROM sessions WHERE user_id=? AND token_hash<>?",
+                (users[0]["id"], flow["session"]),
             )
         else:
             users = await self.store.sql("SELECT * FROM users WHERE google_subject=?", (subject,))

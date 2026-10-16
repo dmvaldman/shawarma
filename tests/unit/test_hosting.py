@@ -815,3 +815,84 @@ async def test_shared_service_links_cannot_target_another_tenant(hosted):
     )
     assert response.status_code == 403
     hosting.cloud.request.assert_not_called()
+
+
+async def test_admin_metadata_and_support_are_private_expiring_and_audited(hosted, monkeypatch):
+    import time
+    from unittest.mock import AsyncMock
+
+    hosting, client = hosted
+    admin = {"X-Swarm-Session": await login(client, "owner-code")}
+    await hosting.store.invite("Alice", code="alice-code")
+    alice = {"X-Swarm-Session": await login(client, "alice-code")}
+    target = (await client.get("/api/me", headers=alice)).json()
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='alice-node' WHERE id=?", (target["id"],)
+    )
+    assert (await client.get("/api/admin-usage", headers=alice)).status_code == 403
+    for route in ("admin-content", "admin-invite"):
+        assert (await client.post("/api/" + route, headers=alice, json={})).status_code == 403
+    request = {"user_id": target["id"], "kind": "messages", "channel": "channel"}
+    assert (await client.post("/api/admin-content", headers=admin, json=request)).status_code == 403
+    hosting.cloud.command.assert_not_called()
+    assert (
+        await client.post("/api/support-access", headers=alice, json={"grant": True})
+    ).status_code == 200
+    hosting.cloud.command.return_value = json.dumps({"items": [{"text": "PRIVATE QUESTION"}]})
+    viewed = await client.post("/api/admin-content", headers=admin, json=request)
+    assert viewed.status_code == 200 and "PRIVATE QUESTION" in viewed.text
+    report = await client.get("/api/admin-usage", headers=admin)
+    assert report.status_code == 200 and "PRIVATE QUESTION" not in report.text
+    history = (await client.get("/api/support-access", headers=alice)).json()
+    assert any(event["action"] == "read_messages" for event in history["audit"])
+    await client.post("/api/support-access", headers=alice, json={"grant": False})
+    assert (await client.post("/api/admin-content", headers=admin, json=request)).status_code == 403
+    await hosting.store.sql(
+        "INSERT INTO support_grants VALUES(?,?)", (target["id"], int(time.time()) - 1)
+    )
+    assert (await client.post("/api/admin-content", headers=admin, json=request)).status_code == 403
+    # A revoke while the read is in progress must also deny the response.
+    await hosting.store.sql(
+        "UPDATE support_grants SET expires=? WHERE user_id=?", (int(time.time()) + 60, target["id"])
+    )
+
+    async def revoke(*args):
+        await hosting.store.sql("DELETE FROM support_grants WHERE user_id=?", (target["id"],))
+        return json.dumps({"items": [{"text": "DO NOT RETURN"}]})
+
+    monkeypatch.setattr(hosting.cloud, "command", AsyncMock(side_effect=revoke))
+    response = await client.post("/api/admin-content", headers=admin, json=request)
+    assert response.status_code == 403 and "DO NOT RETURN" not in response.text
+
+
+async def test_invite_revocation_regeneration_and_claim_end_code_logins(hosted):
+    hosting, client = hosted
+    admin = {"X-Swarm-Session": await login(client, "owner-code")}
+    await hosting.store.invite("Alice", code="old-code")
+    target = (await hosting.store.sql("SELECT * FROM users WHERE name='Alice'"))[0]
+    response = await client.post(
+        "/api/admin-invite", headers=admin, json={"user_id": target["id"], "action": "regenerate"}
+    )
+    new_code = response.json()["code"]
+    assert len(new_code) == 10
+    assert (await client.post("/api/login", json={"code": "old-code"})).status_code == 401
+    new_session = await login(client, new_code)
+    await hosting.store.invite(
+        "Pending", code="pending-code", subject="google-subject", activated=False
+    )
+    pending = {"X-Swarm-Session": await login(client, "pending-code")}
+    assert (
+        await client.post("/api/redeem", headers=pending, json={"code": new_code})
+    ).status_code == 200
+    assert (await client.post("/api/login", json={"code": new_code})).status_code == 401
+    assert (
+        await client.get("/api/me", headers={"X-Swarm-Session": new_session})
+    ).status_code == 401
+    assert (await client.get("/api/me", headers=pending)).json()["name"] == "Alice"
+    assert (
+        await client.post(
+            "/api/admin-invite",
+            headers=admin,
+            json={"user_id": target["id"], "action": "regenerate"},
+        )
+    ).status_code == 409

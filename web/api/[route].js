@@ -1,4 +1,4 @@
-const routes=new Set(['admin-keys','analytics','dashboard-connect','stop','redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
+const routes=new Set(['admin-usage','admin-invite','admin-content','support-access','admin-keys','analytics','dashboard-connect','stop','redeem','login','logout','me','providers','start','pause','invite','open','credentials','models','auth-config','google-start','google-callback']);
 const sessionCookie=value=>'__Host-swarm_session='+value+'; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000';
 const clearOAuth='__Host-swarm_oauth=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0';
 export default async function handler(req,res){
@@ -6,7 +6,8 @@ export default async function handler(req,res){
   res.setHeader('Referrer-Policy','no-referrer');
   const route=req.query.route;
   if(!routes.has(route))return res.status(404).json({error:'Not found.'});
-  if(req.method!==(['analytics','me','models','auth-config','google-callback'].includes(route)?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
+  if(req.method!==(route==='support-access'?req.method:['admin-usage','analytics','me','models','auth-config','google-callback'].includes(route)?'GET':'POST'))return res.status(405).json({error:'Method not allowed.'});
+  if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'Method not allowed.'});
   if(req.method==='POST'&&req.headers.origin!=='https://'+req.headers.host)return res.status(403).json({error:'Origin rejected.'});
   if(!process.env.CONTROL_PLANE_URL||!process.env.CONTROL_PLANE_KEY)return res.status(503).json({error:'The beta is being prepared. Please check back shortly.'});
   const cookies={};

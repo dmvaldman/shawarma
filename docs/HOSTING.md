@@ -184,3 +184,43 @@ handle, first/last name and nickname, while Gitea receives the full display name
 Mattermost SSO logs in using the stable private email rather than a mutable handle.
 Owner IDs, history and permissions remain intact. Gitea's internal administrative
 login remains stable; hosted pages prefer full display names where supported.
+
+
+## Private administration
+
+Settings → Administration → Usage dashboard is restricted to the existing admin role.
+The dashboard records account/invite state, last-seen timestamps, run boundaries,
+agent counts, input/cache/output tokens, human/agent message counts, issues, PRs,
+merged PRs, main-branch commits, blocked/failed agents, model IDs and disk usage.
+No prompts, chat contents, channel/repository names, API keys, or provider account
+billing balances enter the metadata ledger. Runtime durations begin at confirmed
+readiness; historical/imported runs have unknown start times rather than invented
+ones. No infrastructure dollar estimate is displayed without a billing source.
+
+Metadata is sampled about once a minute independently of open browsers and retained
+in SQLite across pause, stop and platform restarts. Pause/stop gracefully drain the
+controller and collect final counters in a separate read-only process before power
+down. Each Play after a pause begins another run; extending an active deadline does
+not. Reset epochs have separate counter baselines, with a pre-reset checkpoint and
+idempotent metadata-only local retry journal. Git outages produce unknown counts,
+not zero; confirmed high-water counters survive transient outages. Peak agent counts
+are observed peaks. Cached input is a subset of input, not extra tokens. Imported
+counts cover the current workspace, not a reconstructed pre-tracking run history.
+
+Invite codes are shown only at creation/regeneration, never retrieved from storage.
+Only unclaimed invites can be revoked or regenerated. Claiming an invite or linking
+Google rotates its login hash and retires the code; claiming also revokes any prior
+invite-authenticated sessions. Existing linked accounts have their legacy invite
+hashes retired during migration without ending their current Google sessions.
+
+Users can explicitly grant David one hour of support access in Settings. The admin
+gets a separate read-only portal viewer for channels/messages and repositories,
+issues, PRs and file previews, with a visible support identity and expiry banner.
+There is no native owner impersonation link or write API. Each content request
+checks the lease before and after fetching; revocation/expiry denies in-flight
+responses. Access is audited and visible to the user; Stop/reset revoke the lease.
+Support content is returned without caching and is not saved in the admin ledger.
+Known account/provider credentials are redacted. The viewer provides bounded text
+previews; native files, code execution, posting, merging and other writes are absent.
+Infrastructure operators still have privileged system access; this is not an
+end-to-end-encryption claim.
