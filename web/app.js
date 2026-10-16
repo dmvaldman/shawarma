@@ -162,10 +162,10 @@ async function renderUsage(force=false){
   const card=usageNode('div',undefined,'usage-card');card.append(usageNode('strong',usageNumber(count)),usageNode('span',label));cards.append(card);
  }
  const list=$('usage-users');list.replaceChildren();
- for(const u of users){
+ for(const u of users.filter(u=>u.invite_status!=='revoked')){
   const card=usageNode('article',undefined,'usage-user'),heading=usageNode('div',undefined,'section-title');
   heading.append(usageNode('strong',u.name),usageNode('span',u.status+' · '+u.invite_status,'small'));card.append(heading);
-  card.append(usageNode('p','Joined '+usageDate(u.created_at)+' · Last seen '+usageDate(u.last_seen)));
+  card.append(usageNode('p','Invite created '+usageDate(u.created_at)+' · Last seen '+usageDate(u.last_seen)));
   const latest=u.latest;
   if(latest){card.append(usageNode('p',usageNumber(latest.agents)+' agents · '+usageNumber(latest.blocked)+' blocked · '+usageNumber(latest.failed)+' failed'+(latest.uncertain_calls?' · '+usageNumber(latest.uncertain_calls)+' calls with unknown usage':'')+' · '+(latest.models||[]).join(', ')));
    card.append(usageNode('p','Last sample '+usageDate(latest.at)+(latest.unavailable?' · Collection unavailable':'')+' · Disk '+(latest.disk_used_bytes===null?'—':(latest.disk_used_bytes/1073741824).toFixed(1)+' GB')));
