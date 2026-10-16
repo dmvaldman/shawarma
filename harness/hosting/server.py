@@ -546,7 +546,7 @@ class Hosting:
             "HARNESS_GITEA_URL": "http://localhost:3000",
             "HARNESS_GITEA_WORKER_URL": "http://gitea:3000",
             "HARNESS_OPENCODE_URL": "http://localhost:4096",
-            "HARNESS_MAX_ACTIVE_AGENTS": "24",
+            "HARNESS_MAX_ACTIVE_AGENTS": "100",
             "HARNESS_OPENAI_BASE_URL": self.public_url + "/proxy/openai/v1",
             "HARNESS_ANTHROPIC_BASE_URL": self.public_url + "/proxy/anthropic/v1",
             "HARNESS_DEEPSEEK_BASE_URL": self.public_url + "/proxy/deepseek/v1",

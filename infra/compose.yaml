@@ -2,6 +2,8 @@ name: agent-company
 services:
   postgres:
     image: postgres:16.10-alpine
+    # Full-roster native sessions each hold a connection, plus tools and Mattermost.
+    command: ["postgres", "-c", "max_connections=250"]
     environment:
       POSTGRES_USER: mattermost
       POSTGRES_DB: mattermost

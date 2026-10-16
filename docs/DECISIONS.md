@@ -739,3 +739,12 @@ Use the existing provider-backed chat runtime for the seed and retain native Ope
 ### Public composition typing (2026-10-14)
 
 Typing starts when a worker explicitly opens begin_channel_post, before its first public text chunk, and is refreshed until completion/cancellation/owner pause. This avoids missing the whole indicator interval when snapshot polling first sees already-completed short text. The chat-only OpenAI seed now consumes Responses SSE internally and sends typing only while post_channel arguments identify an authorized channel; private reasoning, ordinary private text and unrelated tools do not start it. Argument completion and request/activation cleanup cancel refreshes. Seed message publication remains the existing final tool operation. Provider completion/usage accounting is preserved; there are no extra inference requests. Other provider-backed seed models retain their existing transport. Mattermost has no explicit stop-typing event, so abandoned composers expire through its normal timeout.
+
+
+## 2026-10-16: Raise the swarm roster cap to 100
+
+Count the seed, all nonterminated agents, and pending spawn reservations against
+a cap of 100. Keep the existing atomic capacity check and ancestry escalation
+rules. Hosted provisioning and local defaults use the same cap. Increase the
+PostgreSQL server limit to 250 connections to accommodate the 110-connection
+harness pool plus Mattermost; native activations retain advisory-lock connections.

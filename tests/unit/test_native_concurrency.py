@@ -16,7 +16,7 @@ async def test_entire_roster_runs_with_legacy_inference_gate_exhausted(monkeypat
         _env_file=None,
         coding_enabled=True,
         opencode_password="test",
-        max_active_agents=24,
+        max_active_agents=100,
         mattermost_url="http://mattermost.invalid",
         database_url="postgresql://unused",
     )
@@ -66,9 +66,9 @@ async def test_entire_roster_runs_with_legacy_inference_gate_exhausted(monkeypat
     tasks = [asyncio.create_task(runtime.activate()) for runtime in runtimes]
     try:
         await asyncio.wait_for(all_started.wait(), 3)
-        assert len(started) == 24
+        assert len(started) == 100
         assert all(not task.done() for task in tasks)
-        assert len(connections) == 24
+        assert len(connections) == 100
     finally:
         release.set()
         await asyncio.gather(*tasks)
@@ -76,4 +76,4 @@ async def test_entire_roster_runs_with_legacy_inference_gate_exhausted(monkeypat
     # Per-session advisory locking and cleanup still apply to every activation.
     assert all(conn.fetchval.await_count == 1 for conn in connections)
     assert all(conn.execute.await_count == 1 for conn in connections)
-    assert client.close.await_count == 24
+    assert client.close.await_count == 100

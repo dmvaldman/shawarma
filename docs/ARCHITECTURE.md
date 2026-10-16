@@ -861,7 +861,7 @@ objectives communicated by the human owner in Mattermost.
   never claim unperformed tests or present guesses as verified facts.
 
 ## Capacity Requests
-- The global cap is 24 live agents including the seed; pending births reserve slots.
+- The global cap is 100 live agents including the seed; pending births reserve slots.
   At CAPACITY_EXCEEDED, @mention your parent in a shared channel with the proposed
   role/model/task, why existing peers cannot help, and the original requester.
   Do not repeatedly retry. The seed makes its own decision when requesting.
@@ -1660,7 +1660,7 @@ Ancestry still limits termination, not collaboration.
 
 ### Global capacity and ancestry escalation amendment (2026-10-10)
 
-The current global cap is 24 nonterminated agents, including the seed. Pending
+The current global cap is 100 nonterminated agents, including the seed. Pending
 birth reservations count against it under the existing workspace lock. Retired
 records remain history, not capacity usage; cumulative total and per-parent spawn
 limits are removed so retirement genuinely frees a reusable slot. Bootstrap
@@ -2113,7 +2113,7 @@ provisioning is introduced. Existing gitea_request covers remaining repository A
 ## Owner amendment: 2026-10-13 — Native concurrency
 
 Remove the separate OpenCode coding and native inference concurrency caps. Every
-agent in the roster may activate simultaneously; retain the 24-agent capacity cap,
+agent in the roster may activate simultaneously; retain the 100-agent capacity cap,
 per-agent session lock, owner controls and activation deadlines. Size the database
 connection pool for one advisory-lock connection per live agent plus ten ordinary
 query/tool connections, so full-roster work cannot starve tools or controls. The

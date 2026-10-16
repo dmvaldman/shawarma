@@ -287,7 +287,7 @@ objectives communicated by the human owner in Mattermost.
   never claim unperformed tests or present guesses as verified facts.
 
 ## Capacity Requests
-- The global cap is 24 live agents including the seed; pending births reserve slots.
+- The global cap is 100 live agents including the seed; pending births reserve slots.
   At CAPACITY_EXCEEDED, @mention your parent in a shared channel with the proposed
   role/model/task, why existing peers cannot help, and the original requester.
   Do not repeatedly retry. The seed makes its own decision when requesting.

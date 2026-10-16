@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     avatar_base_url: str = ""
     avatar_api_key: SecretStr = SecretStr("")
     seed_model: str = ""
-    max_active_agents: int = Field(default=24, gt=0)
+    max_active_agents: int = Field(default=100, gt=0)
     max_concurrent_llm_calls: int = Field(default=10, gt=0)
     max_tokens_per_turn: int = Field(default=4096, gt=0)
     openai_api_key: SecretStr = Field(default=SecretStr(""), validation_alias="OPENAI_API_KEY")

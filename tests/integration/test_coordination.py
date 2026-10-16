@@ -428,18 +428,18 @@ async def test_budget_removal_retries_blocked_agents_and_preserves_history(
     assert await store.history(parent) == before
 
 
-async def test_global_24_cap_counts_pending_births_atomically(runtime_store):
+async def test_global_100_cap_counts_pending_births_atomically(runtime_store):
     store, settings, seed, workspace = runtime_store
     coordinator = Coordination(store, settings)
     results = await asyncio.gather(
-        *(coordinator.reserve(seed, f"slot-{index}", ARGS) for index in range(30)),
+        *(coordinator.reserve(seed, f"slot-{index}", ARGS) for index in range(106)),
         return_exceptions=True,
     )
-    assert sum(isinstance(result, UUID) for result in results) == 23
+    assert sum(isinstance(result, UUID) for result in results) == 99
     assert sum(isinstance(result, QuotaError) for result in results) == 7
     assert (
         await store.pool.fetchval("SELECT count(*) FROM spawn_requests WHERE status='provisioning'")
-        == 23
+        == 99
     )
     first = next(index for index, result in enumerate(results) if isinstance(result, UUID))
     await coordinator.fail(seed, f"slot-{first}")
@@ -500,5 +500,5 @@ async def test_reinitialize_applies_live_cap_without_resetting_workspace(runtime
     limits = decode(
         await store.pool.fetchval("SELECT limits FROM workspaces WHERE id=$1", workspace)
     )
-    assert int(limits["max_active_agents"]) == 24
+    assert int(limits["max_active_agents"]) == 100
     assert "max_agents_total" not in limits and "max_child_spawns_per_agent" not in limits

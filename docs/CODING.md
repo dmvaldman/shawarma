@@ -3,7 +3,7 @@
 Each tracked swarm identity now has **one persistent OpenCode session** with
 native coding tools and the existing Mattermost/swarm tools. OpenCode owns the
 model/tool loop and working history. There is no code_task handoff. The controller
-owns identity, scheduling, durable notification delivery, ancestry, the 24-agent
+owns identity, scheduling, durable notification delivery, ancestry, the 100-agent
 cap, controls and analytics. Each agent has its own Git clone/branch in Gitea.
 Native internal delegation stays disabled; spawn_agent is the only collaborator
 creation path.
@@ -125,7 +125,7 @@ discarding its files or conversation.
 ## Controls, durability and costs
 
 - Native OpenCode activations have no separate concurrency cap. All agents in the
-  roster may work simultaneously (currently capped at 24 agents). Each agent keeps
+  roster may work simultaneously (currently capped at 100 agents). Each agent keeps
   its own session/checkout and advisory lock; the legacy provider-engine inference
   limit does not throttle native activations.
 - `HARNESS_CODING_TIMEOUT_SEC` defaults to 600 seconds per native activation, not a

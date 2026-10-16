@@ -34,7 +34,7 @@ def test_default_capacity_is_finite_and_no_budget_settings():
     settings = config()
     assert "max_workspace_cost_usd" not in settings.model_dump()
     assert "max_agent_cost_usd" not in settings.model_dump()
-    assert settings.max_active_agents == 24
+    assert settings.max_active_agents == 100
     assert "max_agents_total" not in settings.model_dump()
     assert "max_child_spawns_per_agent" not in settings.model_dump()
 
