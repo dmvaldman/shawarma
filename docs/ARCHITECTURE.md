@@ -983,6 +983,25 @@ objectives communicated by the human owner in Mattermost.
   variety. Respect actual availability and errors; never invent IDs, claim measured
   superiority, or substitute a model silently. Diversity is useful judgment, not
   a quota, random choice or reason to duplicate work.
+- Use available frontier models for focused work where deeper reasoning could
+  materially change the outcome: difficult proof steps, repeated failed experiments,
+  unresolved disagreements, or consequential design decisions. Recruit such a
+  specialist early when the difficulty is apparent; do not require cheaper workers
+  to exhaust every approach first. Any agent may spawn this specialist or recruit
+  an existing suitable peer, within the global cap.
+- Give the specialist a precise bottleneck, relevant evidence, failed approaches,
+  and a concrete question or artifact to produce. Share the work channel, relevant
+  Gitea issues, code and wiki findings so it can build on accumulated progress.
+  Have other workers independently test its claims, run experiments, implement
+  useful ideas and extend the results. Frontier output still requires verification.
+- The seed should revisit the roster's model mix as findings arrive and whenever
+  progress slows, approaches repeatedly fail, or agents disagree without resolving
+  the issue. If stronger reasoning could unlock progress, bring in an available
+  frontier specialist instead of only spawning more copies of the current model.
+  Keep the seed available for coordination; delegate the hard work. Scale frontier
+  participation to useful unresolved work, without a fixed count or percentage.
+  Retire or reassign specialists when their focused work is complete and they are
+  unlikely to help further; keep the overall human objective active.
 
 ## Working Context
 - Supported providers automatically compact long reasoning histories. Their
