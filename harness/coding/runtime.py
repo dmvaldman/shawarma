@@ -101,9 +101,16 @@ class NativeRuntime(Runtime):
                     )
                     await self.store.set_state(self.agent_id, "READY")
                     await asyncio.sleep(min(60, 5 * 2 ** min(failures - 1, 4)))
-            except httpx.TimeoutException as error:
-                # Never replay the timed-out HTTP mutation. _run has aborted and
+            except httpx.TransportError as error:
+                current = await self.store.state(self.agent_id)
+                if current["state"] == "TERMINATED":
+                    return
+                if current["control_paused"] or current["workspace_state"] != "active":
+                    await self.store.set_state(self.agent_id, "READY")
+                    return
+                # Never replay an uncertain HTTP mutation. _run has aborted and
                 # settled it, or retained a running record when cleanup is uncertain.
+                # Gitea identity checks can also fail before the OpenCode prompt.
                 active = await self.store.pool.fetchval(
                     "SELECT EXISTS(SELECT 1 FROM coding_runs "
                     "WHERE agent_id=$1 AND state='running')",
@@ -113,25 +120,29 @@ class NativeRuntime(Runtime):
                 self.transport_failures = failures
                 if not active and failures < 2:
                     logger.warning(
-                        "Agent %s OpenCode %s; interrupted work reconciled, retrying activation",
+                        "Agent %s service connection failed (%s); "
+                        "work reconciled, retrying activation",
                         self.agent_id,
                         type(error).__name__,
                     )
                     await self.store.set_state(self.agent_id, "READY")
+                    await asyncio.sleep(5)
                 else:
                     await self.store.record_failure(
                         self.agent_id,
                         {
                             "category": "worker_unavailable",
-                            "reason": "OpenCode transport timed out repeatedly; work preserved"
+                            "reason": "Service connection failed twice; work preserved"
                             if not active
-                            else "OpenCode timeout; cleanup unconfirmed, reconciliation required",
+                            else "Connection lost; cleanup unconfirmed; reconciliation required",
                             "at": datetime.now(UTC).isoformat(),
-                            "recovery": "Restore OpenCode connectivity, then /continue.",
+                            "recovery": "Restore Gitea/OpenCode connectivity, then /continue.",
                         },
                         blocked=True,
                     )
-                    logger.error("Agent %s OpenCode unavailable; work preserved", self.agent_id)
+                    logger.error(
+                        "Agent %s service connection unavailable; work preserved", self.agent_id
+                    )
             except Exception as error:
                 current = await self.store.state(self.agent_id)
                 if (

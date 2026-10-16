@@ -129,6 +129,18 @@ class Coding:
                 logger.warning(
                     "Interrupted coding run %s reconciled; inspect branch before retry", row["id"]
                 )
+            # Older runtimes permanently blocked the first connection/protocol error.
+            # Retry those known failures on restart only after all remote work is settled.
+            await self.store.pool.execute(
+                "UPDATE agents a SET state='READY',failure=NULL "
+                "WHERE state='QUOTA_BLOCKED' AND failure->>'category'='native_runtime' "
+                "AND failure->>'reason'=ANY($1::text[]) AND NOT EXISTS "
+                "(SELECT 1 FROM coding_runs r WHERE r.agent_id=a.id AND r.state='running')",
+                [
+                    "Native runtime interrupted (ConnectError); inspect #errors",
+                    "Native runtime interrupted (RemoteProtocolError); inspect #errors",
+                ],
+            )
         finally:
             await client.close()
 

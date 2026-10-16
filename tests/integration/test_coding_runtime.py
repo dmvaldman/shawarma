@@ -204,3 +204,37 @@ async def test_aborted_reply_is_recoverable_and_run_is_settled(coding):
         "SELECT EXISTS(SELECT 1 FROM coding_runs WHERE state='running')"
     )
     assert (await service.store.state(agent))["reserved"] == 0
+
+
+@pytest.mark.parametrize(
+    "reason,recovered",
+    [
+        ("Native runtime interrupted (ConnectError); inspect #errors", True),
+        ("Native runtime interrupted (RemoteProtocolError); inspect #errors", True),
+        ("Gitea HTTP 401: Unauthorized", False),
+    ],
+)
+async def test_restart_recovers_only_known_connection_bug_without_unpausing(
+    coding, reason, recovered
+):
+    import json
+
+    service, remote, agent, workspace = coding
+    await service.store.pool.execute("UPDATE workspaces SET state='paused' WHERE id=$1", workspace)
+    await service.store.pool.execute(
+        "UPDATE agents SET state='QUOTA_BLOCKED',control_paused=true,failure=$2 WHERE id=$1",
+        agent,
+        json.dumps({"category": "native_runtime", "reason": reason}),
+    )
+    await service.recover()
+    row = await service.store.pool.fetchrow(
+        "SELECT state,failure,control_paused FROM agents WHERE id=$1", agent
+    )
+    assert row["state"] == ("READY" if recovered else "QUOTA_BLOCKED")
+    assert (row["failure"] is None) == recovered
+    assert row["control_paused"]
+    assert not remote.prompts
+    assert (
+        await service.store.pool.fetchval("SELECT state FROM workspaces WHERE id=$1", workspace)
+        == "paused"
+    )
