@@ -66,23 +66,19 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 
 #settings-back{display:inline-flex;align-items:center;gap:8px;line-height:1.4}#settings-back svg{display:block;flex-shrink:0}
 
-.dashboard-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto auto;column-gap:12px;row-gap:16px}
-.dashboard-toolbar>.section-heading{min-width:0}
-.dashboard-toolbar>#settings-open{justify-self:end}
-@media(max-width:900px){
- .dashboard-toolbar{grid-template-columns:minmax(0,1fr) 42px}
- .dashboard-toolbar>.section-heading{grid-column:1;grid-row:1;padding-top:6px}
- .dashboard-toolbar>#settings-open{grid-column:2;grid-row:1;align-self:start}
- .dashboard-toolbar>.session-controls{grid-column:1/-1;grid-row:2;width:100%}
-}
+.dashboard-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 42px;column-gap:12px;row-gap:16px}
+.dashboard-toolbar>.section-heading{min-width:0;grid-column:1;grid-row:1}
+.dashboard-toolbar>#settings-open{grid-column:2;grid-row:1;justify-self:end;align-self:center}
+.dashboard-toolbar>.session-controls{grid-column:1/-1;grid-row:2;width:100%;align-items:center}
+.session-controls>.session-status{display:inline-flex;align-items:center;margin-right:auto}
 
 .provider-warning p{font-size:var(--font-medium)}
 
-.session-status{display:contents}.status-bubble{display:inline-flex;contain:layout;line-height:0;overflow:hidden}
+.status-bubble{display:inline-flex;align-items:center}
 
 .workspace-section.is-inactive{opacity:.45}.workspace-section.is-inactive button:disabled{opacity:1}
 
-@media(min-width:901px){.dashboard-toolbar>#settings-open{margin-left:16px}}
+
 
 .dashboard-toolbar .section-heading{align-items:flex-end}
 
