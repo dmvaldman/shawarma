@@ -71,6 +71,8 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .dashboard-toolbar>#settings-open{grid-column:2;grid-row:1;justify-self:end;align-self:center}
 .dashboard-toolbar>.session-controls{grid-column:1/-1;grid-row:2;width:100%;align-items:center}
 .session-controls>.session-status{display:inline-flex;align-items:center;margin-right:auto}
+.session-controls #start,.session-controls #pause{width:64px}
+.session-controls #status{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 14px}
 
 .provider-warning p{font-size:var(--font-medium)}
 
