@@ -1010,7 +1010,8 @@ def test_retention_migration_gives_existing_paused_machines_full_week(tmp_path):
         conn.execute("ALTER TABLE users DROP COLUMN inactive_since")
         conn.execute("ALTER TABLE users DROP COLUMN cleanup_retry_at")
         conn.execute(
-            "INSERT INTO users(id,name,login_hash,vault,agent_token_hash,created_at,status,instance) "
+            "INSERT INTO users(id,name,login_hash,vault,agent_token_hash,created_at,"
+            "status,instance) "
             "VALUES('old','Old','hash','unused','agent',1,'sleeping','node')"
         )
     before = int(time.time())
