@@ -27,7 +27,6 @@ async function refresh(){try{
  $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);
  $('provider-warning').hidden=hasProviders;
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
- $('retention-notice').textContent=user.delete_after?'Paused work will be permanently deleted on '+new Date(user.delete_after*1000).toLocaleString()+'. Resume before then to keep it.':'Paused swarms are permanently deleted after 7 days of inactivity.';
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
  $('workspace-empty').hidden=viewAnalytics;$('workspace-empty').textContent=transitioning?'':user.status==='stopped'?'Press Play to start a fresh swarm.':user.status==='sleeping'?'Press Play to continue your swarm.':'Press Play to start your swarm.';
  const frame=$('analytics-frame');frame.hidden=!viewAnalytics;if(!running)$('activity-status').hidden=true;if(viewAnalytics&&(!frame.getAttribute('src')||frame.dataset.mode!==user.status)){$('analytics-loading').hidden=false;frame.dataset.mode=user.status;frame.src='/api/analytics?resource=page&mode='+user.status;}else if(!viewAnalytics&&frame.getAttribute('src')){frame.removeAttribute('src');$('analytics-loading').hidden=true;}
@@ -36,7 +35,7 @@ async function refresh(){try{
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;
  await followSharedLink();
- }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');$('support-view').close();$('support-content').replaceChildren();$('usage-users').replaceChildren();$('usage-runs').replaceChildren();document.querySelector('main').classList.remove('is-account');}else error(e);}}
+ }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('pause-notice').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');$('support-view').close();$('support-content').replaceChildren();$('usage-users').replaceChildren();$('usage-runs').replaceChildren();document.querySelector('main').classList.remove('is-account');}else error(e);}}
 
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',deepseek:'DeepSeek'};
 function renderProviders(){
@@ -72,7 +71,8 @@ $('logout').addEventListener('click',signOut);
 $('activation-logout').addEventListener('click',signOut);
 $('provider-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('providers',{provider:$('provider').value,key:$('provider-key').value});$('provider-key').value='';$('provider-form').hidden=true;});});
 $('start').addEventListener('click',()=>action(()=>api('start',{})));
-$('pause').addEventListener('click',()=>action(()=>api('pause',{})));
+$('pause').addEventListener('click',()=>action(async()=>{await api('pause',{});$('pause-notice').showModal();}));
+$('pause-done').addEventListener('click',()=>$('pause-notice').close());
 $('stop').addEventListener('click',()=>$('stop-confirm').showModal());
 $('stop-cancel').addEventListener('click',()=>$('stop-confirm').close());
 $('stop-confirmed').addEventListener('click',()=>{if(busy)return;$('stop-confirm').close();action(()=>api('stop',{}));});
