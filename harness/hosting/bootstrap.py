@@ -12,12 +12,23 @@ from dotenv import dotenv_values
 from harness.coding.setup import update_env
 from harness.hosting.mattermost_defaults import owner_preferences
 from harness.hosting.profiles import gitea_profile, human_username, mattermost_profile
+from harness.hosting.resume import http_ready, wait_for
 
 
 async def bootstrap() -> None:
     env = dotenv_values(".env")
     name = str(env.get("HOSTED_OWNER_NAME") or "Human")
     if "--finalize" in sys.argv:
+        # The hosted Compose override can recreate both services after coding up
+        # already checked them. Container Started does not mean HTTP is ready.
+        await asyncio.to_thread(
+            wait_for, "Gitea after configuration", lambda: http_ready(3000, "/user/login")
+        )
+        await asyncio.to_thread(
+            wait_for,
+            "OpenCode after configuration",
+            lambda: http_ready(4096, "/global/health", 401),
+        )
         addresses = await asyncio.to_thread(subprocess.check_output, ["hostname", "-I"], text=True)
         update_env(
             {
