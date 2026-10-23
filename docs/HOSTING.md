@@ -224,3 +224,14 @@ Known account/provider credentials are redacted. The viewer provides bounded tex
 previews; native files, code execution, posting, merging and other writes are absent.
 Infrastructure operators still have privileged system access; this is not an
 end-to-end-encryption claim.
+
+
+Paused workspaces and failed setups retaining a machine are automatically deleted
+after seven inactive days. The timer starts when pause completes or setup fails;
+resuming clears it, while signing in or viewing the dashboard does not. Existing
+paused machines get a full seven-day grace period when this policy is introduced.
+The portal shows the deletion deadline. Cleanup reuses Stop: delete the VM, revoke
+service access, and remove saved dashboard content while retaining the account,
+provider keys and administrative usage counts. There is no full backup or restore.
+A new Play creates a fresh swarm. Failed deletion retains the machine reference
+and retries after an hour; cleanup and Play atomically compete for the operation.

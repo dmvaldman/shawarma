@@ -155,6 +155,11 @@ class Hosting:
                     "stage": user["stage"],
                     "error": user["error"],
                     "run_until": user["run_until"],
+                    "delete_after": user["inactive_since"] + 7 * 86400
+                    if user["inactive_since"]
+                    and user["instance"]
+                    and user["status"] in {"sleeping", "failed"}
+                    else None,
                     "providers": {p: bool(vault["providers"].get(p)) for p in PROVIDERS},
                     "admin_keys": {
                         p: self.masked_key(k) for p, k in vault.get("admin_keys", {}).items() if k
@@ -264,26 +269,34 @@ class Hosting:
                     raise web.HTTPBadRequest(text="Add a provider API key first.")
                 deadline = int(time.time()) + int(hours) * 3600
                 if user["status"] == "running":
-                    await self.store.sql(
-                        "UPDATE users SET run_until=? WHERE id=?", (deadline, user["id"])
-                    )
-                else:
-                    await self.usage.begin(user)
-                    await self.store.sql(
-                        "UPDATE users SET action='start',status='queued',error=NULL,run_until=?"
-                        " WHERE id=?",
+                    changed = await self.store.sql(
+                        "UPDATE users SET run_until=? WHERE id=? AND action IS NULL "
+                        "AND status='running' RETURNING id",
                         (deadline, user["id"]),
                     )
+                else:
+                    changed = await self.store.sql(
+                        "UPDATE users SET action='start',status='queued',error=NULL,run_until=?,"
+                        "inactive_since=NULL,cleanup_retry_at=NULL WHERE id=? AND action IS NULL "
+                        "RETURNING id",
+                        (deadline, user["id"]),
+                    )
+                    if changed:
+                        await self.usage.begin(user)
             elif route == "stop":
-                await self.store.sql(
-                    "UPDATE users SET action='stop',status='stopping',run_until=NULL WHERE id=?",
+                changed = await self.store.sql(
+                    "UPDATE users SET action='stop',status='stopping',run_until=NULL WHERE id=? "
+                    "AND action IS NULL RETURNING id",
                     (user["id"],),
                 )
             else:
-                await self.store.sql(
-                    "UPDATE users SET action='pause',status='pausing',run_until=NULL WHERE id=?",
+                changed = await self.store.sql(
+                    "UPDATE users SET action='pause',status='pausing',run_until=NULL WHERE id=? "
+                    "AND action IS NULL RETURNING id",
                     (user["id"],),
                 )
+            if not changed:
+                raise web.HTTPConflict(text="Your machine operation changed. Please try again.")
             return web.json_response({"ok": True})
         if request.method == "POST" and route == "open":
             body = await request.json()
@@ -576,9 +589,21 @@ class Hosting:
         }
         await self.cloud.install(node, env, self.source_ref)
 
+    async def expire_inactive(self) -> None:
+        # Claim atomically against Play; never delete running/provisioning workspaces.
+        now = int(time.time())
+        await self.store.sql(
+            "UPDATE users SET action='expire',status='stopping',run_until=NULL "
+            "WHERE instance IS NOT NULL AND status IN ('sleeping','failed') "
+            "AND action IS NULL AND inactive_since IS NOT NULL AND inactive_since<=? "
+            "AND coalesce(cleanup_retry_at,0)<=?",
+            (now - 7 * 86400, now),
+        )
+
     async def jobs(self) -> None:
         while not self.stopping:
             try:
+                await self.expire_inactive()
                 await self.store.sql(
                     "UPDATE users SET action='pause',status='pausing' "
                     "WHERE status='running' AND run_until IS NOT NULL AND run_until<?",
@@ -601,9 +626,9 @@ class Hosting:
 
     async def run_job(self, user: dict[str, Any]) -> None:
         try:
-            if user["action"] == "stop":
+            if user["action"] in {"stop", "expire"}:
                 if user["instance"]:
-                    if await self.store.sql(
+                    if user["action"] == "stop" and await self.store.sql(
                         "SELECT id FROM hosted_runs WHERE user_id=? AND ended_at IS NULL",
                         (user["id"],),
                     ):
@@ -623,10 +648,20 @@ class Hosting:
                 vault["mattermost_password"] = secrets.token_urlsafe(32)
                 await self.store.sql(
                     "UPDATE users SET instance=NULL,creating=0,status='stopped',action=NULL,"
-                    "stage='',error=NULL,run_until=NULL,vault=?,agent_token_hash=? WHERE id=?",
-                    (self.store.seal(vault), digest(vault["agent_token"]), user["id"]),
+                    "stage='',error=?,run_until=NULL,inactive_since=NULL,cleanup_retry_at=NULL,"
+                    "vault=?,agent_token_hash=? WHERE id=?",
+                    (
+                        "Swarm deleted after seven days of inactivity. Play starts a fresh swarm."
+                        if user["action"] == "expire"
+                        else None,
+                        self.store.seal(vault),
+                        digest(vault["agent_token"]),
+                        user["id"],
+                    ),
                 )
-                await self.usage.finish(user, "stopped")
+                await self.usage.finish(
+                    user, "inactive_deleted" if user["action"] == "expire" else "stopped"
+                )
                 await self.store.sql("DELETE FROM support_grants WHERE user_id=?", (user["id"],))
                 await self.store.sql(
                     "INSERT INTO support_audit(user_id,actor_id,action,at) VALUES(?,?,?,?)",
@@ -669,8 +704,9 @@ class Hosting:
                         )
                     await self.cloud.request("POST", f"instances/{user['instance']}/stop")
                 await self.store.sql(
-                    "UPDATE users SET status='sleeping',action=NULL,stage='',error=? WHERE id=?",
-                    (archive_error, user["id"]),
+                    "UPDATE users SET status='sleeping',action=NULL,stage='',error=?,"
+                    "inactive_since=coalesce(inactive_since,?),cleanup_retry_at=NULL WHERE id=?",
+                    (archive_error, int(time.time()), user["id"]),
                 )
                 await self.usage.finish(user, "time_limit" if user.get("run_until") else "paused")
                 return
@@ -727,7 +763,8 @@ class Hosting:
                 (int(time.time()), user["id"]),
             )
             await self.store.sql(
-                "UPDATE users SET status='running',stage='',action=NULL,error=NULL WHERE id=?",
+                "UPDATE users SET status='running',stage='',action=NULL,error=NULL,"
+                "inactive_since=NULL,cleanup_retry_at=NULL WHERE id=?",
                 (user["id"],),
             )
         except Exception as error:
@@ -751,8 +788,14 @@ class Hosting:
                 "Ask the operator to inspect diagnostics."
             )
             await self.store.sql(
-                "UPDATE users SET status='failed',action=NULL,error=? WHERE id=?",
-                (message, user["id"]),
+                "UPDATE users SET status='failed',action=NULL,error=?,"
+                "inactive_since=coalesce(inactive_since,?),cleanup_retry_at=? WHERE id=?",
+                (
+                    message,
+                    int(time.time()),
+                    int(time.time()) + 3600 if user["action"] == "expire" else None,
+                    user["id"],
+                ),
             )
             await self.usage.finish(user, "setup_failed")
             logger.warning(

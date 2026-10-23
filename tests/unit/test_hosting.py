@@ -896,3 +896,130 @@ async def test_invite_revocation_regeneration_and_claim_end_code_logins(hosted):
             json={"user_id": target["id"], "action": "regenerate"},
         )
     ).status_code == 409
+
+
+async def test_inactive_retention_boundary_deletes_only_saved_machine(hosted, monkeypatch):
+    import time
+
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    owner = (await client.get("/api/me", headers=headers)).json()
+    now = int(time.time())
+    await hosting.store.sql(
+        "UPDATE users SET status='sleeping',instance='saved-node',inactive_since=? WHERE id=?",
+        (now - 7 * 86400 + 60, owner["id"]),
+    )
+    row = await hosting.store.user(owner["id"])
+    vault = hosting.store.unseal(row)
+    vault["providers"]["openai"] = "keep-inference-key"
+    await hosting.store.save_vault(row["id"], vault)
+    await hosting.expire_inactive()
+    assert (await hosting.store.user(row["id"]))["action"] is None
+    # Reading the dashboard doesn't extend retention.
+    view = (await client.get("/api/me", headers=headers)).json()
+    assert view["delete_after"] == now + 60
+    await hosting.store.sql(
+        "UPDATE users SET inactive_since=? WHERE id=?", (now - 7 * 86400, row["id"])
+    )
+    await hosting.expire_inactive()
+    queued = await hosting.store.user(row["id"])
+    assert queued["action"] == "expire"
+    hosting.cloud.request.side_effect = None
+    await hosting.run_job(queued)
+    hosting.cloud.request.assert_awaited_once_with("DELETE", "instances/saved-node")
+    hosting.cloud.command.assert_not_awaited()  # No wake just to collect stats.
+    stopped = await hosting.store.user(row["id"])
+    assert stopped["status"] == "stopped" and stopped["instance"] is None
+    assert stopped["inactive_since"] is None
+    assert "seven days" in stopped["error"]
+    assert hosting.store.unseal(stopped)["providers"]["openai"] == "keep-inference-key"
+
+
+@pytest.mark.parametrize(
+    "status,action,instance",
+    [
+        ("running", None, "node"),
+        ("queued", "start", "node"),
+        ("provisioning", "start", "node"),
+        ("new", None, None),
+        ("sleeping", "start", "node"),
+    ],
+)
+async def test_retention_excludes_active_and_claimed_workspaces(hosted, status, action, instance):
+    hosting, client = hosted
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    await hosting.store.sql(
+        "UPDATE users SET status=?,action=?,instance=?,inactive_since=1 WHERE id=?",
+        (status, action, instance, row["id"]),
+    )
+    await hosting.expire_inactive()
+    after = await hosting.store.user(row["id"])
+    assert (after["status"], after["action"]) == (status, action)
+    hosting.cloud.request.assert_not_awaited()
+
+
+async def test_play_cancels_retention_and_expiration_claim_prevents_play(hosted):
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    vault = hosting.store.unseal(row)
+    vault["providers"]["openai"] = "key"
+    await hosting.store.save_vault(row["id"], vault)
+    await hosting.store.sql(
+        "UPDATE users SET status='sleeping',instance='node',inactive_since=1 WHERE id=?",
+        (row["id"],),
+    )
+    assert (await client.post("/api/start", headers=headers, json={})).status_code == 200
+    await hosting.expire_inactive()
+    row = await hosting.store.user(row["id"])
+    assert row["action"] == "start" and row["inactive_since"] is None
+    await hosting.store.sql(
+        "UPDATE users SET status='sleeping',action=NULL,inactive_since=1 WHERE id=?", (row["id"],)
+    )
+    await hosting.expire_inactive()
+    assert (await client.post("/api/start", headers=headers, json={})).status_code == 409
+    assert (await hosting.store.user(row["id"]))["action"] == "expire"
+
+
+async def test_retention_failed_deletion_keeps_machine_and_delays_retry(hosted):
+    from harness.hosting.cloud import HostingError
+
+    hosting, _ = hosted
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    await hosting.store.sql(
+        "UPDATE users SET status='sleeping',instance='node',inactive_since=1 WHERE id=?",
+        (row["id"],),
+    )
+    await hosting.expire_inactive()
+    hosting.cloud.request.side_effect = HostingError("Infrastructure request failed", 503)
+    await hosting.run_job(await hosting.store.user(row["id"]))
+    failed = await hosting.store.user(row["id"])
+    assert failed["instance"] == "node" and failed["inactive_since"] == 1
+    assert failed["cleanup_retry_at"] > 0
+    await hosting.expire_inactive()
+    assert (await hosting.store.user(row["id"]))["action"] is None
+
+
+def test_retention_migration_gives_existing_paused_machines_full_week(tmp_path):
+    import sqlite3
+    import time
+
+    path, key = tmp_path / "legacy.db", Fernet.generate_key().decode()
+    HostingStore(path, key)
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE users DROP COLUMN inactive_since")
+        conn.execute("ALTER TABLE users DROP COLUMN cleanup_retry_at")
+        conn.execute(
+            "INSERT INTO users(id,name,login_hash,vault,agent_token_hash,created_at,status,instance) "
+            "VALUES('old','Old','hash','unused','agent',1,'sleeping','node')"
+        )
+    before = int(time.time())
+    HostingStore(path, key)
+    with sqlite3.connect(path) as conn:
+        since = conn.execute("SELECT inactive_since FROM users WHERE id='old'").fetchone()[0]
+    assert before <= since <= int(time.time())
+    HostingStore(path, key)
+    with sqlite3.connect(path) as conn:
+        assert (
+            conn.execute("SELECT inactive_since FROM users WHERE id='old'").fetchone()[0] == since
+        )

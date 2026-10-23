@@ -89,6 +89,16 @@ class HostingStore:
                 conn.execute("ALTER TABLE users ADD COLUMN activated INTEGER NOT NULL DEFAULT 1")
             if "last_seen" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN last_seen INTEGER")
+            if "inactive_since" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN inactive_since INTEGER")
+                # Existing saved work gets a full week from policy introduction.
+                conn.execute(
+                    "UPDATE users SET inactive_since=? WHERE instance IS NOT NULL "
+                    "AND status IN ('sleeping','failed')",
+                    (int(time.time()),),
+                )
+            if "cleanup_retry_at" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN cleanup_retry_at INTEGER")
             if "invite_revoked" not in columns:
                 conn.execute(
                     "ALTER TABLE users ADD COLUMN invite_revoked INTEGER NOT NULL DEFAULT 0"
