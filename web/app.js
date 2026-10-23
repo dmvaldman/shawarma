@@ -21,7 +21,7 @@ $('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setI
 async function refresh(){try{
  user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
  const running=user.status==='running',viewAnalytics=user.analytics_available||running,transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
- for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running&&!(viewAnalytics&&section.querySelector('#analytics-frame')));
+ for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running);
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
  $('admin-dashboard-link').hidden=user.role!=='admin';$('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
  $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);
