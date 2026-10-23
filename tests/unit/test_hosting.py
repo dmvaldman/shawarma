@@ -128,7 +128,7 @@ async def test_start_requires_key_and_pause_preserves_machine(hosted):
     await hosting.store.save_vault(row["id"], vault)
     assert (await client.post("/api/start", json={"hours": 8}, headers=headers)).status_code == 200
     row = await hosting.store.user(user["id"])
-    assert row["action"] == "start" and row["run_until"]
+    assert row["action"] == "start" and row["run_until"] is None
     assert (await client.post("/api/start", json={"hours": 8}, headers=headers)).status_code == 409
     await hosting.store.sql(
         "UPDATE users SET action=NULL,status='running',instance='same-node' WHERE id=?",
@@ -194,7 +194,9 @@ async def test_broker_inserts_only_owners_key_and_preserves_stream(hosted, monke
         await runner.cleanup()
 
 
-async def test_expiry_stops_own_machine_while_another_user_is_provisioning(hosted, monkeypatch):
+async def test_manual_pause_stops_own_machine_while_another_user_is_provisioning(
+    hosted, monkeypatch
+):
     import asyncio
 
     hosting, client = hosted
@@ -206,7 +208,7 @@ async def test_expiry_stops_own_machine_while_another_user_is_provisioning(hoste
         await hosting.store.sql("SELECT id FROM users WHERE login_hash=?", (digest(friend_code),))
     )[0]["id"]
     await hosting.store.sql(
-        "UPDATE users SET instance='owner-node',status='running',run_until=1 WHERE id=?",
+        "UPDATE users SET instance='owner-node',status='pausing',action='pause' WHERE id=?",
         (owner["id"],),
     )
     await hosting.store.sql(
@@ -1024,3 +1026,34 @@ def test_retention_migration_gives_existing_paused_machines_full_week(tmp_path):
         assert (
             conn.execute("SELECT inactive_since FROM users WHERE id='old'").fetchone()[0] == since
         )
+
+
+async def test_running_swarm_has_no_deadline_even_for_legacy_clients(hosted):
+    hosting, client = hosted
+    headers = {"X-Swarm-Session": await login(client, "owner-code")}
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    vault = hosting.store.unseal(row)
+    vault["providers"]["openai"] = "key"
+    await hosting.store.save_vault(row["id"], vault)
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='node',run_until=1 WHERE id=?", (row["id"],)
+    )
+    assert (await client.post("/api/start", headers=headers, json={})).status_code == 200
+    assert (await hosting.store.user(row["id"]))["run_until"] is None
+    assert (await client.post("/api/start", headers=headers, json={"hours": 2})).status_code == 200
+    after = await hosting.store.user(row["id"])
+    assert after["status"] == "running" and after["action"] is None
+    assert after["run_until"] is None
+
+
+async def test_startup_clears_legacy_deadlines_without_stopping_swarm(hosted):
+    hosting, client = hosted
+    row = (await hosting.store.sql("SELECT * FROM users WHERE role='admin'"))[0]
+    await hosting.store.sql(
+        "UPDATE users SET status='running',instance='node',run_until=1 WHERE id=?", (row["id"],)
+    )
+    await hosting.startup(web.Application())
+    after = await hosting.store.user(row["id"])
+    assert after["run_until"] is None and after["status"] == "running"
+    assert after["action"] is None
+    hosting.cloud.request.assert_not_awaited()

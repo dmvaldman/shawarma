@@ -261,25 +261,20 @@ class Hosting:
             if user["action"]:
                 raise web.HTTPConflict(text="Your previous machine operation is still in progress.")
             if route == "start":
-                body = await request.json()
-                hours = body.get("hours", 8)
-                if hours not in {2, 8, 24}:
-                    raise web.HTTPBadRequest(text="Choose a 2, 8, or 24 hour session.")
                 if not any(vault["providers"].values()):
                     raise web.HTTPBadRequest(text="Add a provider API key first.")
-                deadline = int(time.time()) + int(hours) * 3600
                 if user["status"] == "running":
                     changed = await self.store.sql(
-                        "UPDATE users SET run_until=? WHERE id=? AND action IS NULL "
+                        "UPDATE users SET run_until=NULL WHERE id=? AND action IS NULL "
                         "AND status='running' RETURNING id",
-                        (deadline, user["id"]),
+                        (user["id"],),
                     )
                 else:
                     changed = await self.store.sql(
-                        "UPDATE users SET action='start',status='queued',error=NULL,run_until=?,"
+                        "UPDATE users SET action='start',status='queued',error=NULL,run_until=NULL,"
                         "inactive_since=NULL,cleanup_retry_at=NULL WHERE id=? AND action IS NULL "
                         "RETURNING id",
-                        (deadline, user["id"]),
+                        (user["id"],),
                     )
                     if changed:
                         await self.usage.begin(user)
@@ -604,11 +599,6 @@ class Hosting:
         while not self.stopping:
             try:
                 await self.expire_inactive()
-                await self.store.sql(
-                    "UPDATE users SET action='pause',status='pausing' "
-                    "WHERE status='running' AND run_until IS NOT NULL AND run_until<?",
-                    (int(time.time()),),
-                )
                 rows = await self.store.sql(
                     "SELECT * FROM users WHERE action IS NOT NULL ORDER BY created_at"
                 )
@@ -708,7 +698,7 @@ class Hosting:
                     "inactive_since=coalesce(inactive_since,?),cleanup_retry_at=NULL WHERE id=?",
                     (archive_error, int(time.time()), user["id"]),
                 )
-                await self.usage.finish(user, "time_limit" if user.get("run_until") else "paused")
+                await self.usage.finish(user, "paused")
                 return
             await self.store.sql(
                 "UPDATE users SET status='provisioning',stage='Starting your machine' WHERE id=?",
@@ -805,6 +795,8 @@ class Hosting:
             )
 
     async def startup(self, app: web.Application) -> None:
+        # Retain the legacy column for compatibility, but sessions no longer expire.
+        await self.store.sql("UPDATE users SET run_until=NULL WHERE run_until IS NOT NULL")
         owner = await self.store.sql("SELECT id FROM users WHERE role=?", ("admin",))
         if not owner:
             await self.store.invite("David", "admin", self.owner_code)

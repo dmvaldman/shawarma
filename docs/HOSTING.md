@@ -47,12 +47,11 @@ rather than blindly creating another machine. Installer progress survives contro
 restarts. Cloud commands never include real provider keys or log raw outputs to users.
 Failed setup stops allocated compute and preserves the disk for inspection/retry.
 
-A user starts a 2-, 8-, or 24-hour session and can extend it. The platform stops the
-controller and machine on pause or expiry, preserving the working volumes. Resume
-uses the same instance and data. The portal remains available while it is stopped.
-Automatic browser-inactivity suspension is deliberately disabled: background agent
-work is authorized for the selected session. Timed shutdown must remain independent
-of the tenant's own UI/controller responsiveness.
+A user plays, pauses, or stops a swarm. Running continues until explicitly paused
+or stopped, independently of browser activity. Pause stops the controller and
+machine while preserving working volumes; resume uses the same instance and data.
+Stop deletes the workspace. Paused work is deleted after seven inactive days, as
+described below. The portal remains available while a machine is paused or stopped.
 
 The native services currently use private Agent37 preview URLs reached through
 short-lived signed links. The global Agent37 API key never reaches the browser.

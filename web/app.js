@@ -24,8 +24,8 @@ async function refresh(){try{
  for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running&&!(viewAnalytics&&section.querySelector('#analytics-frame')));
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
  $('admin-dashboard-link').hidden=user.role!=='admin';$('admin').hidden=user.role!=='admin';$('google-account').hidden=!googleEnabled||user.google_connected;$('google-connect').disabled=Boolean(user.google_connected);$('google-connect').textContent=user.google_connected?'Google connected':'Connect Google';
- $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);$('duration').disabled=transitioning;$('duration').hidden=running;
- $('session-until').hidden=!running;$('session-until').textContent=running?'Swarm will pause at '+new Intl.DateTimeFormat('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).format(new Date(user.run_until*1000)):'';$('provider-warning').hidden=hasProviders;
+ $('start').hidden=running;$('start').disabled=transitioning||!hasProviders;$('pause').hidden=!running;$('stop').disabled=transitioning||['new','stopped'].includes(user.status);
+ $('provider-warning').hidden=hasProviders;
  for(const button of document.querySelectorAll('[data-service]'))button.disabled=!running;
  $('retention-notice').textContent=user.delete_after?'Paused work will be permanently deleted on '+new Date(user.delete_after*1000).toLocaleString()+'. Resume before then to keep it.':'Paused swarms are permanently deleted after 7 days of inactivity.';
  $('notice').hidden=!user.error;$('notice').textContent=user.error||'';
@@ -71,7 +71,7 @@ async function signOut(){await action(async()=>{await api('logout',{});renderSig
 $('logout').addEventListener('click',signOut);
 $('activation-logout').addEventListener('click',signOut);
 $('provider-form').addEventListener('submit',e=>{e.preventDefault();action(async()=>{await api('providers',{provider:$('provider').value,key:$('provider-key').value});$('provider-key').value='';$('provider-form').hidden=true;});});
-$('start').addEventListener('click',()=>action(()=>api('start',{hours:Number($('duration').value)})));
+$('start').addEventListener('click',()=>action(()=>api('start',{})));
 $('pause').addEventListener('click',()=>action(()=>api('pause',{})));
 $('stop').addEventListener('click',()=>$('stop-confirm').showModal());
 $('stop-cancel').addEventListener('click',()=>$('stop-confirm').close());
