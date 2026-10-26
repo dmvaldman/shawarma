@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);let user=null,busy=false,renderSignature=null,googleEnabled=false,lastWorkspaceStatus=null,guideKey=null,adminSignature=null;
-async function api(route,data){const response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
-function error(e){$('error').textContent=e.message;$('error').hidden=false;}
+async function api(route,data){let response;try{response=await fetch('/api/'+route,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});}catch{throw Object.assign(new Error('Unable to connect. Check your internet connection and try again.'),{network:true,route});}const body=await response.json();if(!response.ok)throw Object.assign(new Error(body.error||'Request failed.'),{status:response.status});return body;}
+function error(e,source='action'){$('error').textContent=e.network&&source==='refresh'?'Connection lost. Reconnecting…':e.message;$('error').dataset.source=source;$('error').hidden=false;}
 async function action(fn){if(busy)return;busy=true;$('error').hidden=true;try{await fn();await refresh();}catch(e){error(e);}finally{busy=false;}}
 function showScreen(){const settings=location.hash==='#settings'&&user?.activated,admin=location.hash==='#admin'&&user?.role==='admin';$('admin-screen').hidden=!admin;$('settings-screen').hidden=!settings;$('dashboard-screen').hidden=settings||admin;$('settings-open').hidden=!user?.activated||settings||admin;}
 function openSettings(expand=false){location.hash='settings';showScreen();if(expand){$('inference-providers').open=true;$('inference-providers').scrollIntoView({block:'start'});}}
@@ -19,7 +19,7 @@ $('guide-done').addEventListener('click',()=>$('swarm-guide').close());
 $('swarm-guide').addEventListener('close',()=>{if(guideKey)try{localStorage.setItem(guideKey,'dismissed');}catch{}});
 
 async function refresh(){try{
- user=await api('me');$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
+ user=await api('me');if($('error').dataset.source==='refresh'){$('error').hidden=true;$('error').textContent='';delete $('error').dataset.source;}$('welcome').hidden=true;$('account').hidden=!user.activated;$('activation').hidden=user.activated;$('settings-open').hidden=!user.activated;document.querySelector('main').classList.toggle('is-account',user.activated);if(!user.activated)return;
  const running=user.status==='running',viewAnalytics=user.analytics_available||running,transitioning=['queued','provisioning','pausing','stopping'].includes(user.status),hasProviders=Object.values(user.providers).some(Boolean);
  for(const section of document.querySelectorAll('.workspace-section'))section.classList.toggle('is-inactive',!running);
  $('name').textContent=user.name+"’s swarm";$('status').textContent=({sleeping:'Paused',new:'Ready',queued:'Starting',provisioning:'Provisioning',stopping:'Stopping'})[user.status]||user.status.charAt(0).toUpperCase()+user.status.slice(1);$('status').dataset.state=user.status;$('status').setAttribute('aria-busy',String(transitioning));
@@ -35,7 +35,7 @@ async function refresh(){try{
  if(running){guideKey='swarm-guide:'+user.id+':'+(user.instance_id||user.id);let seen=false;try{seen=localStorage.getItem(guideKey)==='dismissed';}catch{}if((!seen||['queued','provisioning'].includes(lastWorkspaceStatus))&&!$('swarm-guide').open)$('swarm-guide').showModal();}
  lastWorkspaceStatus=user.status;
  await followSharedLink();
- }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('pause-notice').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');$('support-view').close();$('support-content').replaceChildren();$('usage-users').replaceChildren();$('usage-runs').replaceChildren();document.querySelector('main').classList.remove('is-account');}else error(e);}}
+ }catch(e){if(e.status===401){user=null;lastWorkspaceStatus=null;$('swarm-guide').close();$('pause-notice').close();$('welcome').hidden=false;$('account').hidden=true;$('activation').hidden=true;$('settings-open').hidden=true;$('analytics-frame').removeAttribute('src');$('support-view').close();$('support-content').replaceChildren();$('usage-users').replaceChildren();$('usage-runs').replaceChildren();document.querySelector('main').classList.remove('is-account');}else error(e,'refresh');}}
 
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',deepseek:'DeepSeek'};
 function renderProviders(){
@@ -102,6 +102,7 @@ async function followSharedLink(){
 }
 async function initialize(){await refresh();const pending=sessionStorage.getItem('swarm-invite');if(user&&!user.activated&&pending){$('invite-code').value=pending;await action(async()=>{await api('redeem',{code:pending});sessionStorage.removeItem('swarm-invite');$('invite-code').value='';});}else if(user?.activated){sessionStorage.removeItem('swarm-invite');}}
 initialize();setInterval(()=>{if(user&&!busy)refresh();},5000);
+window.addEventListener('online',()=>{if(!busy)refresh();});
 
 async function googleSignIn(){await action(async()=>{const data=await api('google-start',{});const url=new URL(data.url);if(url.origin!=='https://accounts.google.com')throw new Error('Invalid Google sign-in URL.');location.assign(url.href);});}
 $('google-login').addEventListener('click',googleSignIn);
