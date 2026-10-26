@@ -72,6 +72,10 @@ main.is-account{max-width:1650px}main.is-account header{margin-bottom:28px}
 .dashboard-toolbar>.session-controls{grid-column:1/-1;grid-row:2;width:100%;align-items:center}
 .session-controls>.session-status{display:inline-flex;align-items:center;margin-right:auto}
 .session-controls #start,.session-controls #pause{width:64px}
+/* Soft yellow-green is a split-complement to the lavender accent. */
+#start{background:#b8dda0;border-color:#b8dda0;color:#203018}
+#start:hover:not(:disabled){background:#c8e8b4;border-color:#c8e8b4;filter:none}
+#start:disabled{background:#34442e;border-color:#485541;color:#83917c;opacity:1}
 .session-controls #status{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:42px;padding:0 14px}
 
 .provider-warning p{font-size:var(--font-medium)}
